@@ -142,16 +142,18 @@ ensure_kanban_file() {
   [ -f "$KANBAN_FILE" ] || printf '## Inbox\n' >"$KANBAN_FILE"
 }
 
-# get_groups FILE — prints "linenum<TAB>group name" for every "## " heading
+# get_groups FILE — prints "linenum<TAB>group name" for every "## " heading, skipping "done" (case-insensitive)
 get_groups() {
-  grep -n '^## ' "$1" | sed -E 's/^([0-9]+):## /\1\t/'
+  grep -n '^## ' "$1" | awk -F: '$2 !~ /^## [dD][oO][nN][eE][[:space:]]*$/ { print $1 "\t" substr($2, 4) }'
 }
 
 # get_task_entries FILE — prints "linenum<TAB>group<TAB>full task line"
-# for every task line ("- [ ] ..." or "- [x] ...") in the file, done or not.
+# for every task line ("- [ ] ..." or "- [x] ...") in the file, done or not,
+# excluding tasks under the "done" group (case-insensitive).
 get_task_entries() {
   awk '
     /^## / { group = substr($0, 4); next }
+    tolower(group) == "done" { next }
     /^- \[[ xX]\]/ { print NR "\t" group "\t" $0 }
   ' "$1"
 }
@@ -173,10 +175,44 @@ insert_task() {
     'NR==n{print; print txt; next}{print}' "$file" >"${file}.tmp" && mv "${file}.tmp" "$file"
 }
 
-# mark_task_done FILE LINE — flips "- [ ]" to "- [x]" on LINE
+# mark_task_done FILE LINE — moves the task on LINE to the "done" section
+# instead of ticking [x]. If no "## done" heading exists, it is created.
 mark_task_done() {
   local file="$1" line="$2"
-  awk -v n="$line" 'NR==n{sub(/- \[ \]/,"- [x]")}{print}' "$file" >"${file}.tmp" && mv "${file}.tmp" "$file"
+  
+  # Extract the line content
+  local task_line
+  task_line=$(awk -v n="$line" 'NR==n{print}' "$file")
+  [ -z "$task_line" ] && return 1
+
+  # Delete original line
+  delete_line "$file" "$line"
+
+  # Ensure "## done" section exists or locate it (case-insensitive)
+  local done_line
+  done_line=$(grep -n -i '^## done[[:space:]]*$' "$file" | head -1 | cut -d: -f1)
+
+  if [ -z "$done_line" ]; then
+    # Add ## done section if missing
+    # Check if file ends with newline or content
+    if [ -s "$file" ]; then
+      printf '\n## done\n%s\n' "$task_line" >>"$file"
+    else
+      printf '## done\n%s\n' "$task_line" >>"$file"
+    fi
+  else
+    # Append task under the existing "## done" heading
+    local next_line last_line
+    next_line=$(awk -v start="$done_line" 'NR>start && /^## /{print NR; exit}' "$file")
+    if [ -z "$next_line" ]; then
+      last_line=$(awk -v start="$done_line" 'NR>start && NF>0{last=NR} END{print last?last:start}' "$file")
+    else
+      last_line=$(awk -v start="$done_line" -v end="$next_line" \
+        'NR>start && NR<end && NF>0{last=NR} END{print last?last:start}' "$file")
+    fi
+    awk -v n="$last_line" -v txt="$task_line" \
+      'NR==n{print; print txt; next}{print}' "$file" >"${file}.tmp" && mv "${file}.tmp" "$file"
+  fi
 }
 
 # edit_task_text FILE LINE NEWTEXT — replaces task text on LINE, keeping
