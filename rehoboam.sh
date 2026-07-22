@@ -18,12 +18,14 @@ while true; do
   choice=$(gum choose \
     "🗂️   Kanban" \
     "⏱️   TimeW" \
+    "📅  Sync to Daily Note" \
     "✖   Quit" \
     --cursor "▶ " --header "your tasks, tracked — pick a module")
 
   case "$choice" in
   "🗂️   Kanban") bash "$SCRIPT_DIR/kanban.sh" ;;
   "⏱️   TimeW") bash "$SCRIPT_DIR/timew.sh" ;;
+  "📅  Sync to Daily Note") sync_to_daily_note; gum style --foreground "$C_GREEN" "✔ Daily note updated!"; sleep 1 ;;
   "✖   Quit" | "") clear; exit 0 ;;
   esac
 done

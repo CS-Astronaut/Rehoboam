@@ -7,6 +7,7 @@
 # Config
 # ---------------------------------------------------------------------------
 KANBAN_FILE="${KANBAN_FILE:-$HOME/Obsidian Vault/Computer Science/KANBAN.md}"
+DAILY_NOTES_DIR="${DAILY_NOTES_DIR:-$HOME/Obsidian Vault/Computer Science/999 Daily Notes}"
 
 # Tokyo Night palette
 C_BG="#1a1b26"
@@ -173,6 +174,9 @@ insert_task() {
   fi
   awk -v n="$last_line" -v txt="- [ ] ${text}" \
     'NR==n{print; print txt; next}{print}' "$file" >"${file}.tmp" && mv "${file}.tmp" "$file"
+
+  # Auto-sync to daily notes
+  sync_daily_notes
 }
 
 # mark_task_done FILE LINE — moves the task on LINE to the "done" section
@@ -213,6 +217,9 @@ mark_task_done() {
     awk -v n="$last_line" -v txt="$task_line" \
       'NR==n{print; print txt; next}{print}' "$file" >"${file}.tmp" && mv "${file}.tmp" "$file"
   fi
+
+  # Auto-sync to daily notes
+  sync_daily_notes
 }
 
 # edit_task_text FILE LINE NEWTEXT — replaces task text on LINE, keeping
@@ -227,6 +234,9 @@ edit_task_text() {
     }
     { print }
   ' "$file" >"${file}.tmp" && mv "${file}.tmp" "$file"
+
+  # Auto-sync to daily notes
+  sync_daily_notes
 }
 
 # rename_group FILE LINE NEWNAME — renames the "## " heading on LINE
@@ -234,6 +244,9 @@ rename_group() {
   local file="$1" line="$2" newname="$3"
   awk -v n="$line" -v name="$newname" 'NR==n{print "## " name; next}{print}' \
     "$file" >"${file}.tmp" && mv "${file}.tmp" "$file"
+
+  # Auto-sync to daily notes
+  sync_daily_notes
 }
 
 # delete_line FILE LINE — removes a single line
@@ -248,14 +261,168 @@ delete_range() {
   awk -v s="$start" -v e="$end" 'NR<s || NR>e{print}' "$file" >"${file}.tmp" && mv "${file}.tmp" "$file"
 }
 
-# group_end_line FILE HEADING_LINE — last line belonging to that group
-# (the line before the next "## " heading, or EOF if it's the last group)
+# group_end_line FILE STARTLINE — returns the last line of the group that starts at STARTLINE
+# The group ends right before the next ## heading, or at EOF.
 group_end_line() {
-  local file="$1" heading_line="$2" next_line
-  next_line=$(awk -v start="$heading_line" 'NR>start && /^## /{print NR; exit}' "$file")
-  if [ -z "$next_line" ]; then
-    wc -l <"$file"
+  local file="$1" start="$2"
+  local next_Heading
+  next_Heading=$(awk -v start="$start" 'NR>start && /^## /{print NR; exit}' "$file")
+  if [ -z "$next_Heading" ]; then
+    awk 'END{print NR}' "$file"
   else
-    echo $((next_line - 1))
+    echo $((next_Heading - 1))
   fi
+}
+
+# sync_to_daily_note — updates/replaces the "### To-Do" section in current day's daily note
+# with current KANBAN.md groups/tasks + time tracked from `timew summary :day`.
+sync_to_daily_note() {
+  ensure_kanban_file
+  local today daily_note timew_raw
+  today="$(date +%Y-%m-%d)"
+  daily_note="${DAILY_NOTES_DIR}/${today}.md"
+
+  # Ensure daily notes directory exists
+  mkdir -p "$DAILY_NOTES_DIR"
+
+  timew_raw=$(timew export :day 2>/dev/null || echo "[]")
+
+  awk -v timew_json="$timew_raw" -v kanban_file="$KANBAN_FILE" -v daily_note="$daily_note" -v today="$today" '
+  BEGIN {
+    # --- Step A: Parse TIMEW_JSON ---
+    gsub(/\} *, *\{/, "}\n{", timew_json)
+    n_tw = split(timew_json, tw_lines, "\n")
+    for (i = 1; i <= n_tw; i++) {
+      line = tw_lines[i]
+      match(line, /"start":"([^"]+)"/, m_start)
+      match(line, /"end":"([^"]+)"/, m_end)
+      start_str = m_start[1]
+      end_str = m_end[1]
+      
+      if (start_str != "" && end_str != "") {
+        sh=substr(start_str,10,2); smin=substr(start_str,12,2); ss=substr(start_str,14,2)
+        eh=substr(end_str,10,2); emin=substr(end_str,12,2); es=substr(end_str,14,2)
+        dur = (eh*3600 + emin*60 + es) - (sh*3600 + smin*60 + ss)
+        if (dur < 0) dur += 86400
+
+        match(line, /"annotation":"([^"]*)"/, m_ann)
+        ann_str = m_ann[1]
+
+        ann_clean = tolower(ann_str)
+        gsub(/^[ \t]+|[ \t]+$/, "", ann_clean)
+        if (ann_clean != "") tw_durations[ann_clean] += dur
+      }
+    }
+
+    # --- Step B: Parse KANBAN_FILE ---
+    group_count = 0
+    current_grp = ""
+    while ((getline line < kanban_file) > 0) {
+      gsub(/\r/, "", line)
+      if (line ~ /^## /) {
+        grp = substr(line, 4)
+        gsub(/^[ \t]+|[ \t]+$/, "", grp)
+        if (tolower(grp) == "done") {
+          current_grp = ""
+        } else {
+          current_grp = grp
+          if (!(current_grp in grp_seen)) {
+            grp_seen[current_grp] = 1
+            group_count++
+            groups[group_count] = current_grp
+            task_count[current_grp] = 0
+          }
+        }
+      } else if (current_grp != "" && line ~ /^- \[[ xX]\]/) {
+        tc = task_count[current_grp] + 1
+        task_count[current_grp] = tc
+        tasks[current_grp, tc] = line
+      }
+    }
+    close(kanban_file)
+
+    # --- Step C: Build To-Do section ---
+    todo_text = "### To-Do\n"
+    for (i = 1; i <= group_count; i++) {
+      grp = groups[i]
+      tc = task_count[grp]
+      if (tc > 0) {
+        todo_text = todo_text "- " grp "\n"
+        for (j = 1; j <= tc; j++) {
+          tline = tasks[grp, j]
+          match(tline, /^- \[(.)\] (.*)$/, m_task)
+          chk = m_task[1]
+          desc = m_task[2]
+          desc_lower = tolower(desc)
+          sub(/[ \t]*\{[^}]*\}\s*$/, "", desc_lower)
+          gsub(/^[ \t]+|[ \t]+$/, "", desc_lower)
+
+          # Sum time for all annotations matching this task (partial match on either side)
+          best_dur = 0
+          for (ann_key in tw_durations) {
+            if (ann_key != "" && (index(ann_key, desc_lower) > 0 || index(desc_lower, ann_key) > 0)) {
+              best_dur += tw_durations[ann_key]
+            }
+          }
+
+          if (best_dur > 0) {
+            m = int(best_dur / 60)
+            h = int(m / 60)
+            m = m % 60
+            if (h > 0) {
+              time_spent = (m > 0) ? h "h " m "m" : h "h"
+            } else {
+              time_spent = m "m"
+            }
+            todo_text = todo_text "\t- [" chk "] " desc " {" time_spent "}\n"
+          } else {
+            todo_text = todo_text "\t- [" chk "] " desc "\n"
+          }
+        }
+      }
+    }
+
+    # --- Step D: Read existing Daily Note or create default ---
+    dn_content = ""
+    while ((getline line < daily_note) > 0) {
+      dn_content = dn_content line "\n"
+    }
+    close(daily_note)
+
+    if (dn_content == "") {
+      dn_content = "---\naliases: []\ntags:\n  - daily\ndate: " today "\nfocus: \"\"\nproductivity: 0\n---\n\n" todo_text "\n### Note 📝\n- [ ] \n\n---\n### 🧠 Journal\n- Thoughts:\n"
+    } else {
+      # Replace existing ### To-Do or ### To Do section
+      if (dn_content ~ /###[ \t]+To-?[dD]o/) {
+        idx = match(dn_content, /###[ \t]+To-?[dD]o[^\n]*/)
+        before = substr(dn_content, 1, idx - 1)
+        rest = substr(dn_content, idx)
+        
+        idx_next = match(substr(rest, 10), /\n###[ \t]+/)
+        if (idx_next > 0) {
+          after = substr(rest, idx_next + 9)
+          dn_content = before todo_text "\n" after
+        } else {
+          dn_content = before todo_text
+        }
+      } else {
+        if (index(dn_content, "### Note") > 0) {
+          sub(/### Note/, todo_text "\n### Note", dn_content)
+        } else if (index(dn_content, "### 🧠 Journal") > 0) {
+          sub(/### 🧠 Journal/, todo_text "\n### 🧠 Journal", dn_content)
+        } else {
+          dn_content = dn_content "\n\n" todo_text
+        }
+      }
+    }
+
+    printf "%s", dn_content > daily_note
+    close(daily_note)
+  }
+  '
+}
+
+# Alias sync_daily_notes to sync_to_daily_note for backward compatibility
+sync_daily_notes() {
+  sync_to_daily_note "$@"
 }

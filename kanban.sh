@@ -57,7 +57,8 @@ show_tasks() {
     done
 
     mark_task_done "$KANBAN_FILE" "$target_line"
-    gum style --foreground "$C_GREEN" "✔ Marked done!"
+    sync_to_daily_note
+    gum style --foreground "$C_GREEN" "✔ Marked done & synced to Daily Note!"
     pause 0.6
   done
 }
@@ -82,7 +83,8 @@ add_task() {
   [ -z "$text" ] && return
 
   insert_task "$KANBAN_FILE" "$group" "$text"
-  gum style --foreground "$C_GREEN" "✔ Task added to ${group}"
+  sync_to_daily_note
+  gum style --foreground "$C_GREEN" "✔ Task added to ${group} & synced to Daily Note"
   pause 0.8
 }
 
@@ -101,7 +103,8 @@ add_group() {
   fi
 
   printf '\n## %s\n' "$name" >>"$KANBAN_FILE"
-  gum style --foreground "$C_GREEN" "✔ Group '${name}' created"
+  sync_to_daily_note
+  gum style --foreground "$C_GREEN" "✔ Group '${name}' created & synced to Daily Note"
   pause 0.8
 }
 
@@ -150,12 +153,14 @@ edit_delete_task() {
     newtext=$(gum input --value "$current_text" --header "Edit task text")
     [ -z "$newtext" ] && return
     edit_task_text "$KANBAN_FILE" "$target_line" "$newtext"
-    gum style --foreground "$C_GREEN" "✔ Task updated"
+    sync_to_daily_note
+    gum style --foreground "$C_GREEN" "✔ Task updated & synced to Daily Note"
     ;;
   "🗑️  Delete")
     if gum confirm "Delete this task?"; then
       delete_line "$KANBAN_FILE" "$target_line"
-      gum style --foreground "$C_RED" "🗑 Task deleted"
+      sync_to_daily_note
+      gum style --foreground "$C_RED" "🗑 Task deleted & synced to Daily Note"
     fi
     ;;
   *) return ;;
@@ -203,13 +208,15 @@ edit_delete_group() {
     newname=$(gum input --value "$sel" --header "New group name")
     [ -z "$newname" ] && return
     rename_group "$KANBAN_FILE" "$target_line" "$newname"
-    gum style --foreground "$C_GREEN" "✔ Group renamed"
+    sync_to_daily_note
+    gum style --foreground "$C_GREEN" "✔ Group renamed & synced to Daily Note"
     ;;
   "🗑️  Delete (with its tasks)")
     if gum confirm "Delete '${sel}' and ALL its tasks? This can't be undone."; then
       end_line=$(group_end_line "$KANBAN_FILE" "$target_line")
       delete_range "$KANBAN_FILE" "$target_line" "$end_line"
-      gum style --foreground "$C_RED" "🗑 Group deleted"
+      sync_to_daily_note
+      gum style --foreground "$C_RED" "🗑 Group deleted & synced to Daily Note"
     fi
     ;;
   *) return ;;
@@ -228,6 +235,7 @@ while true; do
     "🗃️   Add Task Group" \
     "✏️   Edit / Delete Task" \
     "📁  Edit / Delete Group" \
+    "📅  Sync to Daily Note" \
     "⬅  Return to Main Menu" \
     --cursor "▶ " --header "KANBAN — choose an action")
 
@@ -237,6 +245,7 @@ while true; do
   "🗃️   Add Task Group") add_group ;;
   "✏️   Edit / Delete Task") edit_delete_task ;;
   "📁  Edit / Delete Group") edit_delete_group ;;
+  "📅  Sync to Daily Note") sync_to_daily_note; gum style --foreground "$C_GREEN" "✔ Daily note updated!"; pause 1 ;;
   "⬅  Return to Main Menu" | "") exit 0 ;;
   esac
 done
