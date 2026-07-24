@@ -165,7 +165,7 @@ insert_task() {
   local file="$1" group="$2" text="$3"
   local group_line next_line last_line
   group_line=$(grep -n "^## ${group}\$" "$file" | head -1 | cut -d: -f1)
-  next_line=$(awk -v start="$group_line" 'NR>start && /^## /{print NR; exit}' "$file")
+  next_line=$(awk -v start="$group_line" 'NR>start && (/^## / || /^%%/){print NR; exit}' "$file")
   if [ -z "$next_line" ]; then
     last_line=$(awk -v start="$group_line" 'NR>start && NF>0{last=NR} END{print last?last:start}' "$file")
   else
@@ -197,17 +197,30 @@ mark_task_done() {
   done_line=$(grep -n -i '^## done[[:space:]]*$' "$file" | head -1 | cut -d: -f1)
 
   if [ -z "$done_line" ]; then
-    # Add ## done section if missing
-    # Check if file ends with newline or content
-    if [ -s "$file" ]; then
-      printf '\n## done\n%s\n' "$task_line" >>"$file"
+    # Add ## done section if missing before %% kanban:settings if present
+    local settings_line
+    settings_line=$(grep -n '^%%' "$file" | head -1 | cut -d: -f1)
+    if [ -n "$settings_line" ]; then
+      awk -v line="$settings_line" 'NR==line{print "## done\n"; print} NR!=line{print}' "$file" >"${file}.tmp" && mv "${file}.tmp" "$file"
+      # Insert the task under ## done
+      done_line=$settings_line
+      local next_line last_line
+      next_line=$(awk -v start="$done_line" 'NR>start && (/^## / || /^%%/){print NR; exit}' "$file")
+      last_line=$done_line
+      awk -v n="$last_line" -v txt="$task_line" \
+        'NR==n{print; print txt; next}{print}' "$file" >"${file}.tmp" && mv "${file}.tmp" "$file"
     else
-      printf '## done\n%s\n' "$task_line" >>"$file"
+      # Check if file ends with newline or content
+      if [ -s "$file" ]; then
+        printf '\n## done\n%s\n' "$task_line" >>"$file"
+      else
+        printf '## done\n%s\n' "$task_line" >>"$file"
+      fi
     fi
   else
     # Append task under the existing "## done" heading
     local next_line last_line
-    next_line=$(awk -v start="$done_line" 'NR>start && /^## /{print NR; exit}' "$file")
+    next_line=$(awk -v start="$done_line" 'NR>start && (/^## / || /^%%/){print NR; exit}' "$file")
     if [ -z "$next_line" ]; then
       last_line=$(awk -v start="$done_line" 'NR>start && NF>0{last=NR} END{print last?last:start}' "$file")
     else
@@ -266,7 +279,7 @@ delete_range() {
 group_end_line() {
   local file="$1" start="$2"
   local next_Heading
-  next_Heading=$(awk -v start="$start" 'NR>start && /^## /{print NR; exit}' "$file")
+  next_Heading=$(awk -v start="$start" 'NR>start && (/^## / || /^%%/){print NR; exit}' "$file")
   if [ -z "$next_Heading" ]; then
     awk 'END{print NR}' "$file"
   else
