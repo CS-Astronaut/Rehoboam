@@ -1,13 +1,10 @@
 #!/usr/bin/env bash
-# kanban.sh — gum-powered front end for KANBAN.md
-# All actions below mutate the markdown file directly; nothing is cached.
+# kanban.sh — gum-powered front end for SQLite backend & Obsidian KANBAN.md sync
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=common.sh
 source "$SCRIPT_DIR/common.sh"
 ensure_kanban_file
-
-pause() { sleep "${1:-0.8}"; }
 
 # ---------------------------------------------------------------------------
 # Show tasks — pick an open task to mark done
@@ -16,50 +13,46 @@ show_tasks() {
   while true; do
     print_header "KANBAN"
 
-    mapfile -t entries < <(get_task_entries "$KANBAN_FILE" | awk -F'\t' '$3 !~ /\[[xX]\]/')
+    mapfile -t entries < <(get_task_entries | awk -F'\t' '$3 !~ /\[[xX]\]/')
 
     if [ "${#entries[@]}" -eq 0 ]; then
-      gum style --foreground "$C_YELLOW" "No open tasks. Nice and clear! ✨"
-      gum input --placeholder "Press enter to go back" >/dev/null
+      show_warning "No open tasks. Nice and clear! ✨"
       return
     fi
 
-    local -a display=() lineno_map=()
+    local -a display=() id_map=()
     local last_group=""
     for entry in "${entries[@]}"; do
-      IFS=$'\t' read -r ln grp line <<<"$entry"
+      IFS=$'\t' read -r tid grp line <<<"$entry"
       if [ "$grp" != "$last_group" ]; then
         display+=("── ${grp} ──")
-        lineno_map+=("-1")
+        id_map+=("-1")
         last_group="$grp"
       fi
       display+=("   ${line#- \[ \] }")
-      lineno_map+=("$ln")
+      id_map+=("$tid")
     done
     display+=("⬅  Back")
-    lineno_map+=("-1")
+    id_map+=("-1")
 
-    sel=$(printf '%s\n' "${display[@]}" | gum choose --header "Select a task to mark done")
+    sel=$(printf '%s\n' "${display[@]}" | gum choose --cursor "▶ " --header "Select a task to mark done")
     [ -z "$sel" ] && return
     [ "$sel" = "⬅  Back" ] && return
     if [[ "$sel" == "── "* ]]; then
-      gum style --foreground "$C_RED" "That's a group heading — pick a task inside it."
-      pause 1
+      show_error "That's a group heading — pick a task inside it."
       continue
     fi
 
-    local target_line=""
+    local target_id=""
     for i in "${!display[@]}"; do
       if [ "${display[$i]}" = "$sel" ]; then
-        target_line="${lineno_map[$i]}"
+        target_id="${id_map[$i]}"
         break
       fi
     done
 
-    mark_task_done "$KANBAN_FILE" "$target_line"
-    sync_to_daily_note
-    gum style --foreground "$C_GREEN" "✔ Marked done & synced to Daily Note!"
-    pause 0.6
+    mark_task_done "$target_id"
+    show_success "Marked done & synced to Daily Note!"
   done
 }
 
@@ -68,24 +61,21 @@ show_tasks() {
 # ---------------------------------------------------------------------------
 add_task() {
   print_header "KANBAN"
-  mapfile -t groups < <(get_groups "$KANBAN_FILE" | cut -f2)
+  mapfile -t groups < <(get_groups | cut -f2)
 
   if [ "${#groups[@]}" -eq 0 ]; then
-    gum style --foreground "$C_RED" "No groups yet — create one first."
-    pause 1.2
+    show_error "No groups yet — create one first."
     return
   fi
 
-  group=$(printf '%s\n' "${groups[@]}" | gum choose --header "Add task to which group?")
+  group=$(printf '%s\n' "${groups[@]}" | gum choose --cursor "▶ " --header "Add task to which group?")
   [ -z "$group" ] && return
 
   text=$(gum input --placeholder "Task description" --header "New task text")
   [ -z "$text" ] && return
 
-  insert_task "$KANBAN_FILE" "$group" "$text"
-  sync_to_daily_note
-  gum style --foreground "$C_GREEN" "✔ Task added to ${group} & synced to Daily Note"
-  pause 0.8
+  insert_task "$group" "$text"
+  show_success "Task added to ${group} & synced to Daily Note"
 }
 
 # ---------------------------------------------------------------------------
@@ -96,16 +86,12 @@ add_group() {
   name=$(gum input --placeholder "Group name" --header "New task group name")
   [ -z "$name" ] && return
 
-  if grep -qF "## ${name}" "$KANBAN_FILE"; then
-    gum style --foreground "$C_RED" "A group named '${name}' already exists."
-    pause 1.2
+  if ! add_group_db "$name"; then
+    show_error "A group named '${name}' already exists."
     return
   fi
 
-  printf '\n## %s\n' "$name" >>"$KANBAN_FILE"
-  sync_to_daily_note
-  gum style --foreground "$C_GREEN" "✔ Group '${name}' created & synced to Daily Note"
-  pause 0.8
+  show_success "Group '${name}' created & synced to Daily Note"
 }
 
 # ---------------------------------------------------------------------------
@@ -113,59 +99,55 @@ add_group() {
 # ---------------------------------------------------------------------------
 edit_delete_task() {
   print_header "KANBAN"
-  mapfile -t entries < <(get_task_entries "$KANBAN_FILE")
+  mapfile -t entries < <(get_task_entries)
 
   if [ "${#entries[@]}" -eq 0 ]; then
-    gum style --foreground "$C_YELLOW" "No tasks yet."
-    pause 1
+    show_warning "No tasks yet."
     return
   fi
 
-  local -a display=() lineno_map=()
+  local -a display=() id_map=()
   for entry in "${entries[@]}"; do
-    IFS=$'\t' read -r ln grp line <<<"$entry"
+    IFS=$'\t' read -r tid grp line <<<"$entry"
     local mark="⬜"
     [[ "$line" == *"[x]"* || "$line" == *"[X]"* ]] && mark="✅"
     display+=("${mark} [${grp}] ${line#- \[?\] }")
-    lineno_map+=("$ln")
+    id_map+=("$tid")
   done
   display+=("⬅  Cancel")
-  lineno_map+=("-1")
+  id_map+=("-1")
 
-  sel=$(printf '%s\n' "${display[@]}" | gum choose --header "Select a task")
+  sel=$(printf '%s\n' "${display[@]}" | gum choose --cursor "▶ " --header "Select a task")
   [ -z "$sel" ] && return
   [ "$sel" = "⬅  Cancel" ] && return
 
-  local target_line=""
+  local target_id=""
   for i in "${!display[@]}"; do
     if [ "${display[$i]}" = "$sel" ]; then
-      target_line="${lineno_map[$i]}"
+      target_id="${id_map[$i]}"
       break
     fi
   done
 
   local current_text
-  current_text=$(sed -n "${target_line}p" "$KANBAN_FILE" | sed -E 's/^- \[[ xX]\] //')
+  current_text=$(echo "$sel" | sed -E 's/^.+ \[[^]]+\] //')
 
-  action=$(gum choose "✏️  Edit text" "🗑️  Delete" "⬅  Cancel" --header "Action for: ${current_text}")
+  action=$(gum choose --cursor "▶ " "✏️  Edit text" "🗑️  Delete" "⬅  Cancel" --header "Action for: ${current_text}")
   case "$action" in
   "✏️  Edit text")
     newtext=$(gum input --value "$current_text" --header "Edit task text")
     [ -z "$newtext" ] && return
-    edit_task_text "$KANBAN_FILE" "$target_line" "$newtext"
-    sync_to_daily_note
-    gum style --foreground "$C_GREEN" "✔ Task updated & synced to Daily Note"
+    edit_task_text "$target_id" "$newtext"
+    show_success "Task updated & synced to Daily Note"
     ;;
   "🗑️  Delete")
     if gum confirm "Delete this task?"; then
-      delete_line "$KANBAN_FILE" "$target_line"
-      sync_to_daily_note
-      gum style --foreground "$C_RED" "🗑 Task deleted & synced to Daily Note"
+      delete_task "$target_id"
+      show_error "Task deleted & synced to Daily Note"
     fi
     ;;
   *) return ;;
   esac
-  pause 0.8
 }
 
 # ---------------------------------------------------------------------------
@@ -173,55 +155,50 @@ edit_delete_task() {
 # ---------------------------------------------------------------------------
 edit_delete_group() {
   print_header "KANBAN"
-  mapfile -t glines < <(get_groups "$KANBAN_FILE")
+  mapfile -t glines < <(get_groups)
 
   if [ "${#glines[@]}" -eq 0 ]; then
-    gum style --foreground "$C_YELLOW" "No groups yet."
-    pause 1
+    show_warning "No groups yet."
     return
   fi
 
-  local -a display=() lineno_map=()
+  local -a display=() id_map=()
   for g in "${glines[@]}"; do
-    IFS=$'\t' read -r ln name <<<"$g"
+    IFS=$'\t' read -r gid name <<<"$g"
     display+=("$name")
-    lineno_map+=("$ln")
+    id_map+=("$gid")
   done
   display+=("⬅  Cancel")
-  lineno_map+=("-1")
+  id_map+=("-1")
 
-  sel=$(printf '%s\n' "${display[@]}" | gum choose --header "Select a group")
+  sel=$(printf '%s\n' "${display[@]}" | gum choose --cursor "▶ " --header "Select a group")
   [ -z "$sel" ] && return
   [ "$sel" = "⬅  Cancel" ] && return
 
-  local target_line=""
+  local target_id=""
   for i in "${!display[@]}"; do
     if [ "${display[$i]}" = "$sel" ]; then
-      target_line="${lineno_map[$i]}"
+      target_id="${id_map[$i]}"
       break
     fi
   done
 
-  action=$(gum choose "✏️  Rename" "🗑️  Delete (with its tasks)" "⬅  Cancel" --header "Action for group: ${sel}")
+  action=$(gum choose --cursor "▶ " "✏️  Rename" "🗑️  Delete (with its tasks)" "⬅  Cancel" --header "Action for group: ${sel}")
   case "$action" in
   "✏️  Rename")
     newname=$(gum input --value "$sel" --header "New group name")
     [ -z "$newname" ] && return
-    rename_group "$KANBAN_FILE" "$target_line" "$newname"
-    sync_to_daily_note
-    gum style --foreground "$C_GREEN" "✔ Group renamed & synced to Daily Note"
+    rename_group "$target_id" "$newname"
+    show_success "Group renamed & synced to Daily Note"
     ;;
   "🗑️  Delete (with its tasks)")
     if gum confirm "Delete '${sel}' and ALL its tasks? This can't be undone."; then
-      end_line=$(group_end_line "$KANBAN_FILE" "$target_line")
-      delete_range "$KANBAN_FILE" "$target_line" "$end_line"
-      sync_to_daily_note
-      gum style --foreground "$C_RED" "🗑 Group deleted & synced to Daily Note"
+      delete_group "$target_id"
+      show_error "Group deleted & synced to Daily Note"
     fi
     ;;
   *) return ;;
   esac
-  pause 0.8
 }
 
 # ---------------------------------------------------------------------------
@@ -229,23 +206,23 @@ edit_delete_group() {
 # ---------------------------------------------------------------------------
 while true; do
   print_header "KANBAN"
-  choice=$(gum choose \
+  choice=$(gum choose --cursor "▶ " \
     "📋  Show Tasks" \
     "➕  Add Task" \
-    "🗃️   Add Task Group" \
-    "✏️   Edit / Delete Task" \
+    "🗃️  Add Task Group" \
+    "✏️  Edit / Delete Task" \
     "📁  Edit / Delete Group" \
     "📅  Sync to Daily Note" \
     "⬅  Return to Main Menu" \
-    --cursor "▶ " --header "KANBAN — choose an action")
+    --header "KANBAN — choose an action")
 
   case "$choice" in
   "📋  Show Tasks") show_tasks ;;
   "➕  Add Task") add_task ;;
-  "🗃️   Add Task Group") add_group ;;
-  "✏️   Edit / Delete Task") edit_delete_task ;;
+  "🗃️  Add Task Group") add_group ;;
+  "✏️  Edit / Delete Task") edit_delete_task ;;
   "📁  Edit / Delete Group") edit_delete_group ;;
-  "📅  Sync to Daily Note") sync_to_daily_note; gum style --foreground "$C_GREEN" "✔ Daily note updated!"; pause 1 ;;
+  "📅  Sync to Daily Note") sync_to_daily_note; show_success "Daily note updated!" ;;
   "⬅  Return to Main Menu" | "") exit 0 ;;
   esac
 done
