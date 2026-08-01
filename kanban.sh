@@ -4,7 +4,7 @@
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=common.sh
 source "$SCRIPT_DIR/common.sh"
-ensure_kanban_file
+startup_sync
 
 # ---------------------------------------------------------------------------
 # Show tasks — pick an open task to mark done

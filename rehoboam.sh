@@ -13,6 +13,8 @@ if ! command -v gum >/dev/null 2>&1; then
   exit 1
 fi
 
+startup_sync
+
 while true; do
   print_header "REHOBOAM"
   choice=$(gum choose --cursor "▶ " \

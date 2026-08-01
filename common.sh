@@ -166,6 +166,13 @@ rehoboam_db.sync_kanban_file_to_db()
 "
 }
 
+startup_sync() {
+  "$PYTHON_EXEC" -c "
+import rehoboam_db
+rehoboam_db.startup_sync()
+"
+}
+
 get_groups() {
   "$PYTHON_EXEC" -c "
 import rehoboam_db
