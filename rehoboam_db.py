@@ -650,7 +650,8 @@ def sync_to_daily_note():
 
     with get_db_connection() as conn:
         groups = conn.execute(
-            "SELECT * FROM groups WHERE LOWER(name) != 'done' ORDER BY position ASC, id ASC"
+            "SELECT * FROM groups WHERE LOWER(name) NOT IN ('done', 'future') "
+            "ORDER BY position ASC, id ASC"
         ).fetchall()
         tasks_by_group = {}
         for g in groups:
@@ -702,6 +703,14 @@ def sync_to_daily_note():
 
     with open(daily_note_path, "w", encoding="utf-8") as f:
         f.write(dn_content)
+
+
+def startup_sync():
+    """One-shot sync at startup: KANBAN.md → DB, timew → time_entries, DB → daily note."""
+    init_db()
+    sync_kanban_file_to_db()
+    import_timew_entries()
+    sync_to_daily_note()
 
 
 if __name__ == "__main__":
