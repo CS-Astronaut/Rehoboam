@@ -46,6 +46,7 @@ PlasmoidItem {
     property string lastSig: ""
 
     opacity: root.online ? 1.0 : 0.72
+    layer.enabled: true
     Behavior on opacity {
         NumberAnimation { duration: 600 }
     }
@@ -54,7 +55,7 @@ PlasmoidItem {
         id: stateSource
         engine: "executable"
         connectedSources: [root.stateCmd]
-        interval: 1
+        interval: 1000
         onNewData: function(source, data) {
             if (data.stdout) {
                 try {
@@ -153,6 +154,7 @@ PlasmoidItem {
         }
 
         if (n !== taskModel.count) {
+            root.hidePopup();
             taskModel.clear();
             for (let i = 0; i < n; i++) {
                 taskModel.append(build(i));
@@ -179,6 +181,23 @@ PlasmoidItem {
         pupilAnim.from = pupilAngle;
         pupilAnim.to = angle;
         pupilAnim.start();
+    }
+
+    function showPopup(node, description, category, runTime, taskId) {
+        hoverPopup.anchorNode = node;
+        popupPillText.text = category;
+        popupPillText.color = categoryColor(category);
+        popupTime.text = runTime;
+        popupId.text = "#" + taskId;
+        popupDesc.text = description;
+        hoverPopup.visible = true;
+        hoverPopup.opacity = 1;
+    }
+
+    function hidePopup() {
+        hoverPopup.visible = false;
+        hoverPopup.opacity = 0;
+        hoverPopup.anchorNode = null;
     }
 
     Repeater {
@@ -725,6 +744,22 @@ PlasmoidItem {
                 }
             }
 
+            MouseArea {
+                z: 5
+                anchors.fill: parent
+                hoverEnabled: true
+                Timer {
+                    id: hoverTimer
+                    interval: 1000
+                    onTriggered: root.showPopup(node, model.description, model.category, model.runTime, model.id)
+                }
+                onEntered: hoverTimer.start()
+                onExited: {
+                    hoverTimer.stop();
+                    root.hidePopup();
+                }
+            }
+
             Column {
                 z: 3
                 anchors.fill: parent
@@ -808,6 +843,106 @@ PlasmoidItem {
             }
         }
     }
+
+    Rectangle {
+        id: hoverShadow
+        z: 9
+        visible: hoverPopup.visible
+        x: hoverPopup.x + 3
+        y: hoverPopup.y + 5
+        width: hoverPopup.width
+        height: hoverPopup.height
+        radius: hoverPopup.radius
+        color: "#000000"
+        opacity: 0.5
+    }
+
+
+    Rectangle {
+        id: hoverPopup
+        z: 10
+        visible: false
+        width: Math.min(360, root.width - 24)
+        
+        // 1. Dynamically calculate height based on the Column's contents plus margins
+        height: popupLayout.implicitHeight + 28 
+
+        radius: 12
+        color: "#2e3550"
+        border.color: "#7aa2f7"
+        border.width: 2
+        opacity: 0
+        scale: 0.96
+        
+        Behavior on opacity {
+            NumberAnimation { duration: 140 }
+        }
+        Behavior on scale {
+            NumberAnimation { duration: 140; easing.type: Easing.OutCubic }
+        }
+
+        property Item anchorNode: null
+        readonly property var anchorPoint: anchorNode ? anchorNode.mapToItem(root, anchorNode.width / 2, 0) : null
+        x: anchorNode ? Math.max(4, Math.min(anchorPoint.x - width / 2, root.width - width - 4)) : 0
+        y: anchorNode ? Math.max(4, Math.min(anchorPoint.y - height - 12 < 4 ? anchorPoint.y + anchorNode.height + 12 : anchorPoint.y - height - 12, root.height - height - 4)) : 0
+
+        Column {
+            id: popupLayout // 2. Give the column an ID
+            
+            // 3. Remove anchors.fill and anchor to the top/sides instead
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.top: parent.top
+            anchors.margins: 14
+            spacing: 8
+
+            RowLayout {
+                width: parent.width
+                spacing: 8
+                Rectangle {
+                    Layout.preferredHeight: 18
+                    Layout.preferredWidth: popupPillText.implicitWidth + 14
+                    radius: 9
+                    color: "#2a3050"
+                    border.color: "#383f5c"
+                    border.width: 1
+                    Text {
+                        id: popupPillText
+                        anchors.centerIn: parent
+                        font.pixelSize: 10
+                        font.letterSpacing: 0.8
+                        font.capitalization: Font.SmallCaps
+                    }
+                }
+                Text {
+                    id: popupTime
+                    Layout.alignment: Qt.AlignVCenter
+                    color: root.cNeonOrange
+                    font.pixelSize: 12
+                    font.bold: true
+                }
+                Item {
+                    Layout.fillWidth: true
+                }
+                Text {
+                    id: popupId
+                    Layout.alignment: Qt.AlignVCenter
+                    color: root.cDim
+                    font.pixelSize: 10
+                }
+            }
+
+            Text {
+                id: popupDesc
+                width: parent.width
+                color: root.cFg
+                font.pixelSize: 12
+                wrapMode: Text.Wrap
+                lineHeight: 1.25
+            }
+        }
+    }
+
 
     NumberAnimation {
         id: pupilAnim
