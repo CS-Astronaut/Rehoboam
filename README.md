@@ -162,6 +162,13 @@ Keys:
 | `KANBAN_FILE` | `~/Obsidian Vault/Computer Science/KANBAN.md` | `rehoboam_db.py`, `common.sh` |
 | `DAILY_NOTES_DIR` | `~/Obsidian Vault/Computer Science/999 Daily Notes` | `rehoboam_db.py`, `common.sh` |
 | `REHOBOAM_DB_PATH` | `~/.config/rehoboam/rehoboam.db` | `rehoboam_db.py` |
+| `HIDDEN_GROUPS` | *(unset)* | `rehoboam_exporter.py` |
+
+`HIDDEN_GROUPS` is a comma-separated list of group names whose tasks are
+excluded from the octopus eye display (case-insensitive; the exporter re-reads
+the file on every tick, so changes appear within a second). It affects the
+widget display only — tracking and the TUI are unaffected. Groups containing
+commas aren't supported.
 
 The file is `KEY=VALUE` per line with shell-quoted values — `common.sh`
 sources it directly and `rehoboam_db.py` parses it on import. The widget
@@ -216,8 +223,10 @@ widget browser. (Alternatively copy `hal-octopus/` manually, then clear
 
   - **Widget** — `stateFile` (JSON snapshot path), `pollInterval` (s),
     `hoverDelay` (ms).
-  - **Kanban** — `KANBAN_FILE`, `DAILY_NOTES_DIR`; edits write through to
-    `~/.config/rehoboam/config` atomically.
+  - **Kanban** — `KANBAN_FILE`, `DAILY_NOTES_DIR` (edits write through to
+    `~/.config/rehoboam/config` atomically), plus a **Hidden from the
+    octopus** checkbox list: ticked groups' tasks are dropped from the eye
+    display (persisted as `HIDDEN_GROUPS`).
   - **TimeWarrior** — start a task from dropdowns populated live from the
     board (group + open tasks), stop/continue, and toggle `maxtracking`,
     `verbose`, `confirmation`.
