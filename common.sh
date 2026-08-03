@@ -215,6 +215,14 @@ rehoboam_db.edit_task_text(int(sys.argv[1]), sys.argv[2])
 " "$task_id" "$newtext"
 }
 
+move_task() {
+  local task_id="$1" new_group="$2"
+  "$PYTHON_EXEC" -c "
+import sys, rehoboam_db
+rehoboam_db.move_task(int(sys.argv[1]), sys.argv[2])
+" "$task_id" "$new_group"
+}
+
 delete_task() {
   local task_id="$1"
   "$PYTHON_EXEC" -c "
