@@ -136,6 +136,9 @@ def main():
             today_durs = {}
             try:
                 tasks = list(rehoboam_db.get_open_tasks())
+                hidden = rehoboam_db.get_hidden_groups()
+                if hidden:
+                    tasks = [t for t in tasks if t["group_name"].strip().lower() not in hidden]
                 export_data = read_timew_export()
                 entry, start_local = fetch_active_interval(export_data)
                 if entry is not None:
