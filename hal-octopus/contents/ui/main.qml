@@ -39,7 +39,7 @@ PlasmoidItem {
     property real eyeCy: height / 2
     property real eyeR: 36
     property real nodeW: 160
-    property real nodeH: 68
+    property real nodeH: 92
 
     property real pupilAngle: -20
     property bool hasActive: activeIndex >= 0
@@ -66,6 +66,15 @@ PlasmoidItem {
             } else {
                 online = false;
             }
+        }
+    }
+
+    function categoryColor(cat) {
+        switch (cat) {
+        case "mic": return "#bb9af7";
+        case "future": return "#7dcfff";
+        case "todo": return "#e0af68";
+        default: return "#7aa2f7";
         }
     }
 
@@ -174,6 +183,7 @@ PlasmoidItem {
 
     Repeater {
         id: armRepeater
+        z: 0
         model: root.taskModel
         delegate: Item {
             x: root.eyeCx
@@ -185,7 +195,7 @@ PlasmoidItem {
                 antialiasing: true
                 ShapePath {
                     fillColor: "transparent"
-                    strokeColor: model.isActive ? "#2ce0af68" : "#1c414868"
+                    strokeColor: model.isActive ? "#3ce0af68" : "#1c414868"
                     strokeWidth: 15
                     startX: model.sx
                     startY: model.sy
@@ -201,25 +211,10 @@ PlasmoidItem {
                 ShapePath {
                     fillColor: "transparent"
                     strokeColor: model.isActive ? root.cNeonOrange : "#4a5170"
-                    strokeWidth: model.isActive ? 5 : 2
-                    startX: model.sx
-                    startY: model.sy
-                    PathCubic {
-                        x: model.tx
-                        y: model.ty
-                        control1X: model.c1x
-                        control1Y: model.c1y
-                        control2X: model.c2x
-                        control2Y: model.c2y
-                    }
-                }
-                ShapePath {
-                    id: tracer
-                    fillColor: "transparent"
-                    strokeColor: model.isActive ? "#ffd9a0" : "transparent"
-                    strokeWidth: 2.5
-                    strokeStyle: ShapePath.DashLine
-                    dashPattern: [10, 9]
+                    strokeWidth: model.isActive ? 6 : 2
+                    strokeStyle: model.isActive ? ShapePath.DashLine : ShapePath.SolidLine
+                    capStyle: ShapePath.FlatCap
+                    dashPattern: [10, 10]
                     dashOffset: 0
                     startX: model.sx
                     startY: model.sy
@@ -234,8 +229,8 @@ PlasmoidItem {
                     NumberAnimation on dashOffset {
                         running: model.isActive
                         from: 0
-                        to: -19
-                        duration: 900
+                        to: -20
+                        duration: 1000
                         loops: Animation.Infinite
                     }
                 }
@@ -245,6 +240,7 @@ PlasmoidItem {
 
     Item {
         id: eyeAssembly
+        z: 1
         x: root.eyeCx - root.eyeR
         y: root.eyeCy - root.eyeR
         width: root.eyeR * 2
@@ -424,7 +420,7 @@ PlasmoidItem {
             rotation: root.pupilAngle + 90
             Rectangle {
                 x: -11
-                y: -31
+                y: -18
                 width: 22
                 height: 36
                 radius: 11
@@ -432,7 +428,7 @@ PlasmoidItem {
             }
             Rectangle {
                 x: -6
-                y: -25
+                y: -9.5
                 width: 12
                 height: 19
                 radius: 6
@@ -505,9 +501,11 @@ PlasmoidItem {
 
     Repeater {
         id: nodeRepeater
+        z: 2
         model: root.taskModel
         delegate: Item {
             id: node
+            z: 3
             width: root.nodeW
             height: root.nodeH
             x: root.eyeCx + model.nodeX - width / 2
@@ -523,6 +521,7 @@ PlasmoidItem {
 
             Canvas {
                 id: nodeGlow
+                z: 0
                 anchors.fill: parent
                 anchors.margins: -10
                 property bool isActive: model.isActive
@@ -548,11 +547,12 @@ PlasmoidItem {
             }
 
             Rectangle {
+                z: 1
                 anchors.fill: parent
                 radius: 14
                 clip: true
-                border.color: model.isActive ? root.cNeonOrange : root.cGray
-                border.width: model.isActive ? 1.5 : 1
+                border.color: model.isActive ? "#ffb454" : root.cGray
+                border.width: model.isActive ? 3 : 1
                 Behavior on border.color {
                     ColorAnimation { duration: 320 }
                 }
@@ -573,23 +573,23 @@ PlasmoidItem {
             }
 
             Rectangle {
+                z: 2
                 anchors.fill: parent
                 radius: 14
                 color: "transparent"
-                border.color: root.cNeonOrange
+                border.color: "#ffb454"
                 border.width: 2
-                opacity: model.isActive ? 0.35 : 0
+                opacity: model.isActive ? 0.55 : 0
                 Behavior on opacity {
                     NumberAnimation { duration: 300 }
                 }
             }
 
             Column {
+                z: 3
                 anchors.fill: parent
-                anchors.leftMargin: 12
-                anchors.rightMargin: 12
-                anchors.topMargin: 9
-                spacing: 4
+                anchors.margins: 12
+                spacing: 3
 
                 Row {
                     spacing: 7
@@ -630,9 +630,9 @@ PlasmoidItem {
                     Text {
                         text: model.runTime
                         color: model.isActive ? root.cNeonOrange : "#d6dcf4"
-                        font.pixelSize: 13
+                        font.pixelSize: 15
                         font.bold: true
-                        font.letterSpacing: 0.8
+                        font.letterSpacing: 1
                     }
                 }
 
@@ -641,23 +641,26 @@ PlasmoidItem {
                     text: model.description
                     color: root.cFg
                     font.pixelSize: 11
+                    wrapMode: Text.Wrap
+                    maximumLineCount: 2
                     elide: Text.ElideRight
-                    maximumLineCount: 1
+                    lineHeight: 1.15
                 }
 
                 Rectangle {
                     width: pillText.implicitWidth + 14
                     height: 17
                     radius: 8.5
-                    color: model.isActive ? "#33e0af68" : "#262c45"
-                    border.color: model.isActive ? "#55e0af68" : "#333b4262"
+                    color: model.isActive ? "#26e0af68" : "#2a3050"
+                    border.color: model.isActive ? "#55e0af68" : "#383f5c"
                     border.width: 1
                     Text {
                         id: pillText
                         anchors.centerIn: parent
                         text: model.category
-                        color: model.isActive ? "#ffc28f" : root.cDim
-                        font.pixelSize: 9
+                        color: root.categoryColor(model.category)
+                        opacity: model.isActive ? 1.0 : 0.75
+                        font.pixelSize: 10
                         font.letterSpacing: 0.8
                         font.capitalization: Font.SmallCaps
                     }
