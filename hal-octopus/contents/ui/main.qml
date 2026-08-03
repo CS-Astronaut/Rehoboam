@@ -258,8 +258,8 @@ PlasmoidItem {
             onPaint: {
                 const ctx = getContext("2d");
                 drawRadialGlow(ctx, width, height,
-                    isOnline ? (isLocked ? "#5ce0af68" : "#55f7768e") : "#2e3b4252",
-                    isOnline ? (isLocked ? "#2ce0af68" : "#26f7768e") : "#1a3b4252",
+                    isOnline ? (isLocked ? "#55ff2244" : "#5ce0af68") : "#2e3b4252",
+                    isOnline ? (isLocked ? "#26ff2244" : "#2ce0af68") : "#1a3b4252",
                     0.55);
             }
             opacity: root.online ? 0.65 : 0.25
@@ -275,76 +275,133 @@ PlasmoidItem {
             }
         }
 
-        Rectangle {
-            anchors.centerIn: parent
-            width: parent.width + 8
-            height: parent.height + 8
-            radius: width / 2
-            color: "transparent"
-            border.color: "#3a4162"
-            border.width: 1.5
-        }
-
-        Rectangle {
-            anchors.fill: parent
-            radius: parent.width / 2
-            clip: true
-            border.color: "#0d0f1a"
-            border.width: 1.5
-            Canvas {
-                anchors.fill: parent
-                onPaint: {
-                    const ctx = getContext("2d");
-                    const g = ctx.createLinearGradient(0, 0, 0, height);
-                    g.addColorStop(0, "#333a5c");
-                    g.addColorStop(1, "#0e1018");
-                    ctx.fillStyle = g;
-                    ctx.fillRect(0, 0, width, height);
-                }
-            }
-        }
-
-        Rectangle {
-            anchors.fill: parent
-            anchors.margins: 4
-            radius: parent.width / 2 - 4
-            color: "#10131f"
-            border.color: "#262b42"
-            border.width: 1
-        }
-
-        Rectangle {
-            anchors.fill: parent
-            anchors.margins: 9
-            radius: parent.width / 2 - 9
-            color: "#0d0f1a"
-        }
-
         Canvas {
+            id: chassis
             anchors.fill: parent
-            anchors.margins: 9
-            property bool isOnline: root.online
-            onIsOnlineChanged: requestPaint()
-            onPaint: {
-                const ctx = getContext("2d");
-                drawRadialGlow(ctx, width, height,
-                    isOnline ? "#ff2244" : "#3b4252",
-                    isOnline ? "#8f0f22" : "#232733",
-                    0.5);
-            }
-        }
-
-        Rectangle {
-            anchors.fill: parent
-            anchors.margins: 8
-            radius: parent.width / 2 - 8
-            color: "transparent"
-            border.width: 1.2
-            border.color: root.online ? (root.hasActive ? "#80e0af68" : "#80f7768e") : "#414868"
-            Behavior on border.color {
+                property color ring: root.online ? (root.hasActive ? "#80ff2244" : "#80e0af68") : "#414868" 
+                Behavior on ring {
                 ColorAnimation { duration: 400 }
             }
+            onRingChanged: requestPaint()
+            onPaint: {
+                const ctx = getContext("2d");
+                const w = width;
+                const h = height;
+                const cx = w / 2;
+                const cy = h / 2;
+                const R = Math.min(cx, cy);
+                function ringPath(r) {
+                    ctx.beginPath();
+                    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+                }
+                ringPath(R);
+                ctx.fillStyle = "#10131f";
+                ctx.fill();
+                ringPath(R - 1);
+                ctx.strokeStyle = "#4a5170";
+                ctx.lineWidth = 1;
+                ctx.stroke();
+                ringPath(R - 2);
+                ctx.strokeStyle = "#0a0c13";
+                ctx.lineWidth = 1.5;
+                ctx.stroke();
+                const midG = ctx.createLinearGradient(0, 0, 0, h);
+                midG.addColorStop(0, "#333a5c");
+                midG.addColorStop(0.55, "#1d2236");
+                midG.addColorStop(1, "#0e1018");
+                ringPath(R - 4);
+                ctx.fillStyle = midG;
+                ctx.fill();
+                ringPath(R - 5);
+                ctx.strokeStyle = "#565f89";
+                ctx.lineWidth = 0.8;
+                ctx.stroke();
+                const wellR = R - 9;
+                const wellG = ctx.createRadialGradient(cx, cy - wellR * 0.25, wellR * 0.1, cx, cy, wellR);
+                wellG.addColorStop(0, "#1a1f33");
+                wellG.addColorStop(0.8, "#0c0e17");
+                wellG.addColorStop(1, "#07080f");
+                ringPath(wellR);
+                ctx.fillStyle = wellG;
+                ctx.fill();
+                ctx.strokeStyle = "rgba(86, 95, 137, 0.22)";
+                ctx.lineWidth = 0.7;
+                ringPath(R - 5.5);
+                ctx.stroke();
+                ringPath(wellR + 0.8);
+                ctx.stroke();
+                ctx.strokeStyle = "rgba(0,0,0,0.5)";
+                ringPath(wellR - 0.8);
+                ctx.stroke();
+                ctx.strokeStyle = ring;
+                ctx.lineWidth = 1.4;
+                ringPath(wellR - 1.5);
+                ctx.stroke();
+            }
         }
+        Canvas {
+                // Perfect 28x28 pupil circle, centered in the eye
+                width: 28
+                height: 28
+                anchors.centerIn: parent
+                property bool isOnline: root.online
+                property bool isLocked: root.hasActive
+                onIsOnlineChanged: requestPaint()
+                onIsLockedChanged: requestPaint()
+                onPaint: {
+                    const ctx = getContext("2d");
+                    const w = width;
+                    const h = height;
+                    const cx = w / 2;
+                    const cy = h / 2;
+                    const r = cx; // Perfect circle radius
+
+                    ctx.clearRect(0, 0, w, h);
+
+                    // HAL 9000 Radial Gradient
+                    const body = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
+                    if (isOnline) {
+                        if (isLocked) {
+                            // Active task: Classic HAL Hot Core
+                            body.addColorStop(0.0, "#ffeb3b");  // Hot yellow core
+                            body.addColorStop(0.15, "#ff2244"); // Intense neon red
+                            body.addColorStop(0.6, "#880011");  // Deep dark red
+                            body.addColorStop(1.0, "#0a0000");  // Almost black at the edge
+                        } else {
+                            // Idle: Dimmer orange/amber version
+                            body.addColorStop(0.0, "#ffb454");
+                            body.addColorStop(0.2, "#e07a28");
+                            body.addColorStop(0.7, "#4d2605");
+                            body.addColorStop(1.0, "#0a0000");
+                        }
+                    } else {
+                        // Offline state
+                        body.addColorStop(0, "#565f89");
+                        body.addColorStop(0.5, "#333b4f");
+                        body.addColorStop(1, "#14161f");
+                    }
+
+                    ctx.fillStyle = body;
+                    ctx.beginPath();
+                    ctx.arc(cx, cy, r, 0, Math.PI * 2); // Using arc instead of ellipse
+                    ctx.fill();
+
+                    // HAL Glass Lens Reflection (Cool blue/white tint at the top)
+                    ctx.strokeStyle = "rgba(150, 200, 255, 0.25)"; 
+                    ctx.lineWidth = 3;
+                    ctx.lineCap = "round";
+                    ctx.beginPath();
+                    ctx.arc(cx, cy, r * 0.75, Math.PI * 1.1, Math.PI * 1.8);
+                    ctx.stroke();
+
+                    // Inner bright highlight
+                    ctx.strokeStyle = "rgba(255, 255, 255, 0.4)";
+                    ctx.lineWidth = 1;
+                    ctx.beginPath();
+                    ctx.arc(cx, cy, r * 0.65, Math.PI * 1.2, Math.PI * 1.7);
+                    ctx.stroke();
+                }
+            }
 
         Item {
             id: reticle
@@ -377,71 +434,132 @@ PlasmoidItem {
                     }
                 }
             }
-            Rectangle {
-                x: reticle.width / 2 - 1
-                y: 0
-                width: 2
-                height: 6
-                radius: 1
-                color: root.online ? "#66e0af68" : "#33414868"
+            Shape {
+                anchors.fill: parent
+                antialiasing: true
+                ShapePath {
+                    fillColor: "transparent"
+                    strokeColor: root.online ? "#99e0af68" : "#33414868"
+                    strokeWidth: 1
+                    capStyle: ShapePath.FlatCap
+                    startX: reticle.width / 2
+                    startY: -2
+                    PathLine { x: reticle.width / 2; y: 6 }
+                }
+                ShapePath {
+                    fillColor: "transparent"
+                    strokeColor: root.online ? "#99e0af68" : "#33414868"
+                    strokeWidth: 1
+                    capStyle: ShapePath.FlatCap
+                    startX: reticle.width / 2
+                    startY: reticle.height - 6
+                    PathLine { x: reticle.width / 2; y: reticle.height + 2 }
+                }
+                ShapePath {
+                    fillColor: "transparent"
+                    strokeColor: root.online ? "#99e0af68" : "#33414868"
+                    strokeWidth: 1
+                    capStyle: ShapePath.FlatCap
+                    startX: -2
+                    startY: reticle.height / 2
+                    PathLine { x: 6; y: reticle.height / 2 }
+                }
+                ShapePath {
+                    fillColor: "transparent"
+                    strokeColor: root.online ? "#99e0af68" : "#33414868"
+                    strokeWidth: 1
+                    capStyle: ShapePath.FlatCap
+                    startX: reticle.width - 6
+                    startY: reticle.height / 2
+                    PathLine { x: reticle.width + 2; y: reticle.height / 2 }
+                }
             }
-            Rectangle {
-                x: reticle.width / 2 - 1
-                y: reticle.height - 6
-                width: 2
-                height: 6
-                radius: 1
-                color: root.online ? "#66e0af68" : "#33414868"
-            }
-            Rectangle {
-                x: 0
-                y: reticle.height / 2 - 1
-                width: 6
-                height: 2
-                radius: 1
-                color: root.online ? "#66e0af68" : "#33414868"
-            }
-            Rectangle {
-                x: reticle.width - 6
-                y: reticle.height / 2 - 1
-                width: 6
-                height: 2
-                radius: 1
-                color: root.online ? "#66e0af68" : "#33414868"
+            Shape {
+                id: diagShape
+                anchors.fill: parent
+                antialiasing: true
+                property real q: reticle.width * 0.3536
+                ShapePath {
+                    fillColor: "transparent"
+                    strokeColor: root.online ? "#26e0af68" : "#1c414868"
+                    strokeWidth: 1
+                    capStyle: ShapePath.FlatCap
+                    startX: reticle.width / 2 - diagShape.q - 2.5
+                    startY: reticle.height / 2 - diagShape.q - 2.5
+                    PathLine {
+                        x: reticle.width / 2 - diagShape.q + 0.5
+                        y: reticle.height / 2 - diagShape.q + 0.5
+                    }
+                }
+                ShapePath {
+                    fillColor: "transparent"
+                    strokeColor: root.online ? "#26e0af68" : "#1c414868"
+                    strokeWidth: 1
+                    capStyle: ShapePath.FlatCap
+                    startX: reticle.width / 2 + diagShape.q - 0.5
+                    startY: reticle.height / 2 - diagShape.q - 2.5
+                    PathLine {
+                        x: reticle.width / 2 + diagShape.q + 2.5
+                        y: reticle.height / 2 - diagShape.q + 0.5
+                    }
+                }
+                ShapePath {
+                    fillColor: "transparent"
+                    strokeColor: root.online ? "#26e0af68" : "#1c414868"
+                    strokeWidth: 1
+                    capStyle: ShapePath.FlatCap
+                    startX: reticle.width / 2 - diagShape.q - 2.5
+                    startY: reticle.height / 2 + diagShape.q - 0.5
+                    PathLine {
+                        x: reticle.width / 2 - diagShape.q + 0.5
+                        y: reticle.height / 2 + diagShape.q + 2.5
+                    }
+                }
+                ShapePath {
+                    fillColor: "transparent"
+                    strokeColor: root.online ? "#26e0af68" : "#1c414868"
+                    strokeWidth: 1
+                    capStyle: ShapePath.FlatCap
+                    startX: reticle.width / 2 + diagShape.q - 0.5
+                    startY: reticle.height / 2 + diagShape.q - 0.5
+                    PathLine {
+                        x: reticle.width / 2 + diagShape.q + 2.5
+                        y: reticle.height / 2 + diagShape.q + 2.5
+                    }
+                }
             }
         }
 
         Item {
             id: pupilRig
-            x: 0
-            y: 0
+            x: parent.width / 2
+            y: parent.height / 2
             width: 1
             height: 1
             rotation: root.pupilAngle + 90
-            Rectangle {
+            Canvas {
                 x: -11
                 y: -18
                 width: 22
                 height: 36
-                radius: 11
-                color: root.online ? (root.hasActive ? "#55e0af68" : "#55f7768e") : "#333b4252"
-            }
-            Rectangle {
-                x: -6
-                y: -9.5
-                width: 12
-                height: 19
-                radius: 6
-                color: root.online ? (root.hasActive ? root.cNeonOrange : root.cRed) : root.cIdlePupil
-                border.color: "#0d0f1a"
-                border.width: 1
-                Rectangle {
-                    x: 2
-                    y: 3
-                    width: 3
-                    height: 4
-                    radius: 2
-                    color: "#ffe0e6ff"
+                property bool isOnline: root.online
+                property bool isLocked: root.hasActive
+                onIsOnlineChanged: requestPaint()
+                onIsLockedChanged: requestPaint()
+                onPaint: {
+                    const ctx = getContext("2d");
+                    const w = width;
+                    const h = height;
+                    ctx.clearRect(0, 0, w, h);
+                    const c = isOnline ? (isLocked ? "#55e0af68" : "#55f7768e") : "#333b4252";
+                    const g = ctx.createRadialGradient(w / 2, h / 2, 0, w / 2, h / 2, w / 2);
+                    g.addColorStop(0, "#00ffffff");
+                    g.addColorStop(0.7, c);
+                    g.addColorStop(1, "#00ffffff");
+                    ctx.fillStyle = g;
+                    ctx.beginPath();
+                    ctx.ellipse(w / 2, h / 2, w / 2, h / 2, 0, 0, Math.PI * 2);
+                    ctx.fill();
                 }
             }
         }
@@ -450,40 +568,61 @@ PlasmoidItem {
             anchors.fill: parent
             clip: true
             Canvas {
-                width: parent.width * 0.64
-                height: parent.height * 0.32
-                anchors.horizontalCenter: parent.horizontalCenter
-                y: parent.height * 0.08
-                rotation: -8
+                anchors.fill: parent
                 onPaint: {
                     const ctx = getContext("2d");
-                    const g = ctx.createLinearGradient(0, 0, 0, height);
-                    g.addColorStop(0, "#2effffff");
-                    g.addColorStop(1, "rgba(0,0,0,0)");
-                    ctx.fillStyle = g;
-                    ctx.fillRect(0, 0, width, height);
+                    const w = width;
+                    const h = height;
+                    const cx = w / 2;
+                    const cy = h / 2;
+                    const R = Math.min(cx, cy) - 3;
+                    const sheen = ctx.createLinearGradient(0, 0, 0, h * 0.5);
+                    sheen.addColorStop(0, "rgba(255,255,255,0.14)");
+                    sheen.addColorStop(1, "rgba(255,255,255,0)");
+                    ctx.strokeStyle = sheen;
+                    ctx.lineWidth = R * 0.28;
+                    ctx.lineCap = "round";
+                    ctx.beginPath();
+                    ctx.arc(cx, cy, R * 0.72, Math.PI * 0.98, Math.PI * 1.52);
+                    ctx.stroke();
                 }
             }
-            Rectangle {
-                width: 7
-                height: 7
-                radius: 3.5
-                color: "#55ffffff"
-                x: parent.width * 0.24
-                y: parent.height * 0.22
-            }
             Canvas {
-                width: parent.width * 0.3
-                height: parent.height * 0.12
-                anchors.horizontalCenter: parent.horizontalCenter
-                y: parent.height * 0.82
+                anchors.fill: parent
                 onPaint: {
                     const ctx = getContext("2d");
-                    const g = ctx.createLinearGradient(0, 0, 0, height);
-                    g.addColorStop(0, "#1affffff");
-                    g.addColorStop(1, "rgba(0,0,0,0)");
+                    const w = width;
+                    const h = height;
+                    const cx = w / 2;
+                    const cy = h / 2;
+                    const R = Math.min(cx, cy) - 3;
+                    const bounce = ctx.createLinearGradient(0, h * 0.55, 0, h);
+                    bounce.addColorStop(0, "rgba(255,255,255,0)");
+                    bounce.addColorStop(1, "rgba(255,255,255,0.05)");
+                    ctx.strokeStyle = bounce;
+                    ctx.lineWidth = R * 0.3;
+                    ctx.lineCap = "round";
+                    ctx.beginPath();
+                    ctx.arc(cx, cy, R * 0.82, Math.PI * 1.2, Math.PI * 1.8);
+                    ctx.stroke();
+                }
+            }
+            Canvas {
+                x: parent.width * 0.22
+                y: parent.height * 0.16
+                width: 22
+                height: 22
+                onPaint: {
+                    const ctx = getContext("2d");
+                    const w = width;
+                    const h = height;
+                    ctx.clearRect(0, 0, w, h);
+                    const g = ctx.createRadialGradient(w / 2, h / 2, 0, w / 2, h / 2, w / 2);
+                    g.addColorStop(0, "rgba(255,255,255,0.38)");
+                    g.addColorStop(0.4, "rgba(255,255,255,0.1)");
+                    g.addColorStop(1, "rgba(255,255,255,0)");
                     ctx.fillStyle = g;
-                    ctx.fillRect(0, 0, width, height);
+                    ctx.fillRect(0, 0, w, h);
                 }
             }
         }
@@ -546,31 +685,32 @@ PlasmoidItem {
                 }
             }
 
+
             Rectangle {
-                z: 1
-                anchors.fill: parent
-                radius: 14
-                clip: true
-                border.color: model.isActive ? "#ffb454" : root.cGray
-                border.width: model.isActive ? 3 : 1
-                Behavior on border.color {
-                    ColorAnimation { duration: 320 }
-                }
-                Canvas {
-                    id: panelCanvas
-                    anchors.fill: parent
-                    property bool isActive: model.isActive
-                    onIsActiveChanged: requestPaint()
-                    onPaint: {
-                        const ctx = getContext("2d");
-                        const g = ctx.createLinearGradient(0, 0, 0, height);
-                        g.addColorStop(0, isActive ? "#2e3550" : root.cPanelTop);
-                        g.addColorStop(1, root.cPanelBot);
-                        ctx.fillStyle = g;
-                        ctx.fillRect(0, 0, width, height);
+                        z: 1
+                        anchors.fill: parent
+                        radius: 14
+                        
+                        border.color: model.isActive ? "#ffb454" : root.cGray
+                        border.width: model.isActive ? 3 : 1
+                        
+                        Behavior on border.color {
+                            ColorAnimation { duration: 320 }
+                        }
+
+                        // Replaces the Canvas with a native gradient that respects the radius
+                        gradient: Gradient {
+                            GradientStop {
+                                position: 0.0
+                                color: model.isActive ? "#2e3550" : root.cPanelTop
+                            }
+                            GradientStop {
+                                position: 1.0
+                                color: root.cPanelBot
+                            }
+                        }
                     }
-                }
-            }
+
 
             Rectangle {
                 z: 2
