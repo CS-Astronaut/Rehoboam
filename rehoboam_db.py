@@ -259,6 +259,33 @@ def get_groups() -> List[sqlite3.Row]:
         ).fetchall()
 
 
+def get_hidden_groups() -> set:
+    """Returns the set of group names hidden from the octopus widget display.
+
+    Reads HIDDEN_GROUPS (comma-separated, shell-quoted values written by
+    rehoboam_config.py) from ~/.config/rehoboam/config on every call, so the
+    exporter picks up dialog changes without a restart. Matching is
+    case-insensitive; a missing key or file yields an empty set.
+    """
+    path = os.path.expanduser("~/.config/rehoboam/config")
+    try:
+        with open(path, encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                key, _, value = line.partition("=")
+                if key.strip() != "HIDDEN_GROUPS":
+                    continue
+                value = value.strip()
+                if len(value) >= 2 and value[0] in "'\"" and value[-1] == value[0]:
+                    value = value[1:-1]
+                return {g.strip().lower() for g in value.split(",") if g.strip()}
+    except OSError:
+        pass
+    return set()
+
+
 def get_all_groups() -> List[sqlite3.Row]:
     """Returns all groups including 'done'."""
     sync_kanban_file_to_db()
