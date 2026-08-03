@@ -132,13 +132,24 @@ edit_delete_task() {
   local current_text
   current_text=$(echo "$sel" | sed -E 's/^.+ \[[^]]+\] //')
 
-  action=$(gum choose --cursor "▶ " "✏️  Edit text" "🗑️  Delete" "⬅  Cancel" --header "Action for: ${current_text}")
+  action=$(gum choose --cursor "▶ " "✏️  Edit text" "📦  Change group" "🗑️  Delete" "⬅  Cancel" --header "Action for: ${current_text}")
   case "$action" in
   "✏️  Edit text")
     newtext=$(gum input --value "$current_text" --header "Edit task text")
     [ -z "$newtext" ] && return
     edit_task_text "$target_id" "$newtext"
     show_success "Task updated & synced to Daily Note"
+    ;;
+  "📦  Change group")
+    mapfile -t groups < <(get_groups | cut -f2)
+    if [ "${#groups[@]}" -eq 0 ]; then
+      show_error "No other groups available."
+      return
+    fi
+    group=$(printf '%s\n' "${groups[@]}" | gum choose --cursor "▶ " --header "Move task to which group?")
+    [ -z "$group" ] && return
+    move_task "$target_id" "$group"
+    show_success "Task moved to ${group} & synced to Daily Note"
     ;;
   "🗑️  Delete")
     if gum confirm "Delete this task?"; then
