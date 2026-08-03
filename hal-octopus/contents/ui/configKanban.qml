@@ -16,6 +16,10 @@ KCM.SimpleKCM {
     property int cfg_hoverDelay: 2000
     property int cfg_hoverDelayDefault: 2000
 
+    property var boardGroups: []
+    property var hiddenSet: ({})
+    property bool syncingGroups: false
+
     function encArg(s) {
         return encodeURIComponent(s).replace(/[!'()*~]/g, c => "%" + c.charCodeAt(0).toString(16).toUpperCase());
     }
@@ -26,13 +30,29 @@ KCM.SimpleKCM {
         connectedSources: []
         onNewData: function(source, data) {
             execer.disconnectSource(source);
-            const isGet = source.indexOf(" get ") !== -1;
-            if (isGet) {
-                const value = (data.stdout ? data.stdout : "").trim();
+            const out = (data.stdout ? data.stdout : "").trim();
+            if (source.indexOf(" list") !== -1) {
+                try {
+                    const board = JSON.parse(out);
+                    kanbanPage.boardGroups = board.groups ? board.groups : [];
+                    kanbanPage.syncGroupChecks();
+                } catch (e) {
+                    statusLabel.text = i18n("Failed to load groups: %1", out);
+                }
+            } else if (source.indexOf(" get HIDDEN_GROUPS") !== -1) {
+                kanbanPage.hiddenSet = {};
+                if (out) {
+                    for (const g of out.split(",")) {
+                        const name = g.trim();
+                        if (name) kanbanPage.hiddenSet[name.toLowerCase()] = true;
+                    }
+                }
+                kanbanPage.syncGroupChecks();
+            } else if (source.indexOf(" get ") !== -1) {
                 if (source.indexOf("KANBAN_FILE") !== -1) {
-                    if (value) kanbanFile.text = value;
+                    if (out) kanbanFile.text = out;
                 } else if (source.indexOf("DAILY_NOTES_DIR") !== -1) {
-                    if (value) dailyNotesDir.text = value;
+                    if (out) dailyNotesDir.text = out;
                 }
             } else {
                 statusLabel.text = data.stderr ? data.stderr.trim() : i18n("Applied");
@@ -44,9 +64,29 @@ KCM.SimpleKCM {
         execer.connectSource(cmd);
     }
 
+    function syncGroupChecks() {
+        syncingGroups = true;
+        for (let i = 0; i < groupsRepeater.count; i++) {
+            groupsRepeater.itemAt(i).checked =
+                kanbanPage.hiddenSet[kanbanPage.boardGroups[i].trim().toLowerCase()] === true;
+        }
+        syncingGroups = false;
+    }
+
+    function saveHidden() {
+        const names = [];
+        for (let i = 0; i < groupsRepeater.count; i++) {
+            if (groupsRepeater.itemAt(i).checked) names.push(kanbanPage.boardGroups[i]);
+        }
+        run("python3 " + kanbanPage.helper + " set HIDDEN_GROUPS " +
+            (names.length ? encArg(names.join(",")) : "''"));
+    }
+
     function loadValues() {
         run("python3 " + helper + " get KANBAN_FILE");
         run("python3 " + helper + " get DAILY_NOTES_DIR");
+        run("python3 " + helper + " get HIDDEN_GROUPS");
+        run("python3 " + helper + " list");
     }
 
     QtLayouts.ColumnLayout {
@@ -83,6 +123,26 @@ KCM.SimpleKCM {
             placeholderText: "~/Obsidian Vault/Computer Science/999 Daily Notes"
             QtLayouts.Layout.fillWidth: true
             onEditingFinished: run("python3 " + kanbanPage.helper + " set DAILY_NOTES_DIR " + encArg(text))
+        }
+
+        QtControls.Label {
+            text: i18n("Hidden from the octopus")
+            font.bold: true
+        }
+        QtControls.Label {
+            text: i18n("Ticked groups' tasks won't be displayed on the widget eye. Affects the octopus display only; tracking still works.")
+            wrapMode: Text.Wrap
+            opacity: 0.7
+        }
+        Repeater {
+            id: groupsRepeater
+            model: kanbanPage.boardGroups
+            QtControls.CheckBox {
+                required property string modelData
+                text: modelData
+                checked: false
+                onToggled: if (!kanbanPage.syncingGroups) kanbanPage.saveHidden();
+            }
         }
 
         QtControls.Label {
