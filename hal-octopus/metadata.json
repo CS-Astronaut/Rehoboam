@@ -16,7 +16,7 @@
         "ServiceTypes": [
             "Plasma/Applet"
         ],
-        "Version": "1.1",
+        "Version": "1.2",
         "Website": ""
     },
     "X-Plasma-API-Minimum-Version": "6.0",
