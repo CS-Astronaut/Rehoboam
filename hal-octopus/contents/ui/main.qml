@@ -29,8 +29,12 @@ PlasmoidItem {
     readonly property color cPanelTop: "#232943"
     readonly property color cPanelBot: "#131622"
 
-    property string stateFile: "/home/rigel/.cache/rehoboam_widget.json"
-    property string stateCmd: "cat " + stateFile
+    property string stateFile: plasmoid.configuration.stateFile
+    property string stateCmd: "python3 /home/rigel/rehoboam/rehoboam_config.py cat " + encArg(stateFile)
+
+    function encArg(s) {
+        return encodeURIComponent(s).replace(/[!'()*~]/g, c => "%" + c.charCodeAt(0).toString(16).toUpperCase());
+    }
     property var taskModel: ListModel {}
     property int activeIndex: -1
     property bool online: false
@@ -55,7 +59,7 @@ PlasmoidItem {
         id: stateSource
         engine: "executable"
         connectedSources: [root.stateCmd]
-        interval: 1000
+        interval: Math.max(1000, plasmoid.configuration.pollInterval * 1000)
         onNewData: function(source, data) {
             if (data.stdout) {
                 try {
@@ -750,7 +754,7 @@ PlasmoidItem {
                 hoverEnabled: true
                 Timer {
                     id: hoverTimer
-                    interval: 1000
+                    interval: Math.max(250, plasmoid.configuration.hoverDelay)
                     onTriggered: root.showPopup(node, model.description, model.category, model.runTime, model.id)
                 }
                 onEntered: hoverTimer.start()
