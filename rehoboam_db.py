@@ -12,6 +12,30 @@ import subprocess
 from datetime import datetime, timedelta, timezone
 from typing import List, Dict, Tuple, Optional
 
+def load_env_config() -> None:
+    """Loads KEY=VALUE entries from ~/.config/rehoboam/config into os.environ
+    (only for keys not already set by the caller's environment). The file is
+    written shell-quoted by rehoboam_config.py, so quotes are stripped here."""
+    path = os.path.expanduser("~/.config/rehoboam/config")
+    try:
+        with open(path, encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                key, _, value = line.partition("=")
+                key = key.strip()
+                value = value.strip()
+                if len(value) >= 2 and value[0] in "'\"" and value[-1] == value[0]:
+                    value = value[1:-1]
+                if key and key not in os.environ:
+                    os.environ[key] = value
+    except OSError:
+        pass
+
+
+load_env_config()
+
 DB_PATH = os.getenv("REHOBOAM_DB_PATH", os.path.expanduser("~/.config/rehoboam/rehoboam.db"))
 KANBAN_FILE = os.getenv(
     "KANBAN_FILE",

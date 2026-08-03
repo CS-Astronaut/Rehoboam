@@ -11,6 +11,8 @@ export PYTHONPATH="$SCRIPT_DIR${PYTHONPATH:+:$PYTHONPATH}"
 # ---------------------------------------------------------------------------
 # Config
 # ---------------------------------------------------------------------------
+REHOBOAM_CONFIG="${REHOBOAM_CONFIG:-$HOME/.config/rehoboam/config}"
+[ -f "$REHOBOAM_CONFIG" ] && . "$REHOBOAM_CONFIG"
 KANBAN_FILE="${KANBAN_FILE:-$HOME/Obsidian Vault/Computer Science/KANBAN.md}"
 DAILY_NOTES_DIR="${DAILY_NOTES_DIR:-$HOME/Obsidian Vault/Computer Science/999 Daily Notes}"
 
