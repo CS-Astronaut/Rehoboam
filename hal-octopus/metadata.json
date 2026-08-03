@@ -1,0 +1,25 @@
+{
+    "KPlugin": {
+        "Authors": [
+            {
+                "Email": "",
+                "Name": "Rigel"
+            }
+        ],
+        "Category": "Utilities",
+        "Description": "Octopus-armed task board with a HAL 9000 eye, driven by the Rehoboam task suite.",
+        "EnabledByDefault": true,
+        "Icon": "timer",
+        "Id": "org.rehoboam.hal-octopus",
+        "License": "GPL-2.0-or-later",
+        "Name": "HAL-Octopus",
+        "ServiceTypes": [
+            "Plasma/Applet"
+        ],
+        "Version": "1.1",
+        "Website": ""
+    },
+    "X-Plasma-API-Minimum-Version": "6.0",
+    "X-Plasma-MainScript": "ui/main.qml",
+    "KPackageStructure": "Plasma/Applet"
+}
