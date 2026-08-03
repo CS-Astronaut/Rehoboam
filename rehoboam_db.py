@@ -353,6 +353,26 @@ def edit_task_text(task_id: int, new_text: str):
     sync_to_daily_note()
 
 
+def move_task(task_id: int, new_group_name: str):
+    """Moves a task to the specified group (creating the group if needed)."""
+    with get_db_connection() as conn:
+        g = conn.execute("SELECT id FROM groups WHERE name = ?", (new_group_name,)).fetchone()
+        if not g:
+            cursor = conn.execute("INSERT INTO groups (name) VALUES (?)", (new_group_name,))
+            new_group_id = cursor.lastrowid
+        else:
+            new_group_id = g["id"]
+
+        conn.execute(
+            "UPDATE tasks SET group_id = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+            (new_group_id, task_id)
+        )
+        conn.commit()
+
+    export_db_to_kanban_markdown(KANBAN_FILE)
+    sync_to_daily_note()
+
+
 def delete_task(task_id: int):
     """Deletes task from DB."""
     with get_db_connection() as conn:
