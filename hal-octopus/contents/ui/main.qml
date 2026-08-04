@@ -74,6 +74,35 @@ PlasmoidItem {
         }
     }
 
+    Plasma5Support.DataSource {
+        id: actionSource
+        engine: "executable"
+        connectedSources: []
+        onNewData: function(source, data) {
+            actionSource.disconnectSource(source);
+            if (data.stderr) {
+                console.warn("rehoboam action failed:", data.stderr.trim());
+            }
+        }
+    }
+
+    function runAction(cmd) {
+        actionSource.connectSource(cmd);
+    }
+
+    function toggleTracking(entry) {
+        root.hidePopup();
+        if (entry.isActive) {
+            runAction("timew stop");
+        } else if (root.hasActive) {
+            runAction("python3 /home/rigel/rehoboam/rehoboam_config.py timew-switch " +
+                      encArg(entry.group) + " " + encArg(entry.description));
+        } else {
+            runAction("python3 /home/rigel/rehoboam/rehoboam_config.py timew-start " +
+                      encArg(entry.group) + " " + encArg(entry.description));
+        }
+    }
+
     function categoryColor(cat) {
         switch (cat) {
         case "mic": return "#bb9af7";
@@ -145,6 +174,7 @@ PlasmoidItem {
             return {
                 id: t.id,
                 description: t.description,
+                group: t.group,
                 category: t.category,
                 runTime: t.run_time,
                 runSeconds: t.run_seconds,
@@ -752,6 +782,7 @@ PlasmoidItem {
                 z: 5
                 anchors.fill: parent
                 hoverEnabled: true
+                cursorShape: Qt.PointingHandCursor
                 Timer {
                     id: hoverTimer
                     interval: Math.max(250, plasmoid.configuration.hoverDelay)
@@ -762,6 +793,7 @@ PlasmoidItem {
                     hoverTimer.stop();
                     root.hidePopup();
                 }
+                onClicked: root.toggleTracking(model)
             }
 
             Column {
