@@ -224,9 +224,11 @@ widget browser. (Alternatively copy `hal-octopus/` manually, then clear
   - **Widget** — `stateFile` (JSON snapshot path), `pollInterval` (s),
     `hoverDelay` (ms).
   - **Kanban** — `KANBAN_FILE`, `DAILY_NOTES_DIR` (edits write through to
-    `~/.config/rehoboam/config` atomically), plus a **Hidden from the
-    octopus** checkbox list: ticked groups' tasks are dropped from the eye
-    display (persisted as `HIDDEN_GROUPS`).
+    `~/.config/rehoboam/config` atomically), a **Hidden from the octopus**
+    checkbox list (ticked groups' tasks are dropped from the eye display,
+    persisted as `HIDDEN_GROUPS`), and an **Add task** row: pick a group from
+    the dropdown, type a title, and the task lands on the board (and the eye,
+    within a couple of seconds).
   - **TimeWarrior** — start a task from dropdowns populated live from the
     board (group + open tasks), stop/continue, and toggle `maxtracking`,
     `verbose`, `confirmation`.
@@ -284,6 +286,7 @@ rehoboam_config.py list                    # {"groups": [...], "tasks": {group: 
 rehoboam_config.py get-timew KEY           # current timew config value
 rehoboam_config.py timew-config KEY VALUE  # timew config KEY VALUE
 rehoboam_config.py timew-start GROUP TASK  # timew start GROUP + annotate @1 TASK
+rehoboam_config.py add-task GROUP TITLE    # add a task to GROUP (DB + KANBAN.md + daily note)
 ```
 
 ## Database schema
