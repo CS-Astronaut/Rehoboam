@@ -212,6 +212,10 @@ widget browser. (Alternatively copy `hal-octopus/` manually, then clear
 
 - **Eye**: open tasks are rendered as nodes on the HAL 9000 eye assembly;
   active tasks are highlighted and show live elapsed time (`run_time`).
+- **Click to track**: click a node to start TimeWarrior tracking for that
+  task, click the active node to stop, click another node to switch (one
+  click = start/stop, following the play/pause convention). The eye updates
+  within ~1 s via the next poll.
 - **Hover popup**: hover any node for `hoverDelay` ms (default 2000) to see
   the full task panel — description, group, run time, and status.
 - **Polling**: `DataSource` runs
@@ -245,6 +249,7 @@ widget browser. (Alternatively copy `hal-octopus/` manually, then clear
     {
       "id": 25,
       "description": "add change task group to edit task section (rehoboam)",
+      "group": "todo",
       "category": "@todo",
       "run_seconds": 3725,
       "run_time": "1h 2m",
@@ -286,6 +291,7 @@ rehoboam_config.py list                    # {"groups": [...], "tasks": {group: 
 rehoboam_config.py get-timew KEY           # current timew config value
 rehoboam_config.py timew-config KEY VALUE  # timew config KEY VALUE
 rehoboam_config.py timew-start GROUP TASK  # timew start GROUP + annotate @1 TASK
+rehoboam_config.py timew-switch GROUP TASK # stop current (if any), then start GROUP + annotate @1 TASK
 rehoboam_config.py add-task GROUP TITLE    # add a task to GROUP (DB + KANBAN.md + daily note)
 ```
 
