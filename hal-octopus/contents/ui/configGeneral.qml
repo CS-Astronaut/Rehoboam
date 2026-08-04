@@ -10,6 +10,10 @@ KCM.SimpleKCM {
     property alias cfg_pollInterval: pollInterval.value
     property alias cfg_hoverDelay: hoverDelay.value
 
+    property string cfg_stateFileDefault: ""
+    property int cfg_pollIntervalDefault: 1
+    property int cfg_hoverDelayDefault: 2000
+
     QtLayouts.ColumnLayout {
         spacing: 10
         QtLayouts.Layout.fillWidth: true
