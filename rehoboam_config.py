@@ -14,6 +14,7 @@ Subcommands (all values URL-encoded where noted):
   get-timew KEY              print current timew config value for KEY ("" if unset)
   timew-config KEY VALUE     timew config KEY VALUE (VALUE URL-encoded)
   timew-start GROUP TASK     timew start GROUP + timew annotate @1 TASK (both URL-encoded)
+  timew-switch GROUP TASK    stop current tracking (if any), then timew-start (both URL-encoded)
   add-task GROUP TITLE       add a task to GROUP in the kanban DB/board (both URL-encoded)
 
 The config file is sourced by common.sh and parsed by rehoboam_db.py, so values
@@ -119,6 +120,11 @@ def main():
         subprocess.run(["timew", "config", key, value], input="yes\n", text=True, check=False)
     elif cmd == "timew-start":
         group, task = expand(sys.argv[2]), expand(sys.argv[3])
+        subprocess.run(["timew", "start", group], check=False)
+        subprocess.run(["timew", "annotate", "@1", task], check=False)
+    elif cmd == "timew-switch":
+        group, task = expand(sys.argv[2]), expand(sys.argv[3])
+        subprocess.run(["timew", "stop"], check=False)
         subprocess.run(["timew", "start", group], check=False)
         subprocess.run(["timew", "annotate", "@1", task], check=False)
     elif cmd == "add-task":
