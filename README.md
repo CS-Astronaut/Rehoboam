@@ -13,14 +13,8 @@
   <img alt="TimeWarrior" src="https://img.shields.io/badge/TimeWarrior-1.9%2B-e0af68?style=flat-square">
 </p>
 
-```
-████  █████ █   █  ███  ████   ███   ███  █   █
-█   █ █      █   █ █   █ █   █ █   █ █   █ ██ ██
-████   ████ █████ █   █ ████  █   █ █████ █ █ █
-█ █   █      █   █ █   █ █   █ █   █ █   █ █   █
-█  █  █      █   █ █   █ █   █ █   █ █   █ █   █
-█   █ █████ █   █  ███  ████   ███  █   █ █   █
-```
+![rehoboam](./assets/REHOBOAM.webp)
+<br/>
 
 REHOBOAM is a task-management and time-tracking suite with a single source of
 truth: an Obsidian **`KANBAN.md`** file. It wears two faces:
