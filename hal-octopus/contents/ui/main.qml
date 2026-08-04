@@ -48,11 +48,44 @@ PlasmoidItem {
     property real pupilAngle: -20
     property bool hasActive: activeIndex >= 0
     property string lastSig: ""
+    property real haloOpacity: 0.65
+    property real reticleStep: 1
+    property real nodePulse: 0.775
+    property real dotPhase: 0
+    property real dotScale: 1.0
+    property real dotOpacity: 1.0
 
     opacity: root.online ? 1.0 : 0.72
-    layer.enabled: true
     Behavior on opacity {
         NumberAnimation { duration: 600 }
+    }
+
+    Timer {
+        id: tick
+        interval: 300
+        repeat: true
+        running: root.online
+        property real phase: 0
+        property int snapCount: 0
+        onTriggered: {
+            reticle.rotation = (reticle.rotation + root.reticleStep) % 360;
+            phase = phase + 0.18;
+            root.haloOpacity = 0.765 + 0.115 * Math.sin(phase);
+            root.nodePulse = 0.6 + 0.35 * (0.5 + 0.5 * Math.sin(phase));
+            root.dotPhase = (root.dotPhase + 0.24) % 1;
+            root.dotScale = 0.6 + 1.5 * root.dotPhase;
+            root.dotOpacity = 0.9 * (1 - root.dotPhase);
+            if (root.activeIndex >= 0) {
+                var arm = armRepeater.itemAt(root.activeIndex);
+                if (arm)
+                    arm.dashStep -= 6;
+            }
+            if (++snapCount >= 10) {
+                snapCount = 0;
+                if (!root.hasActive)
+                    pupilAngle = -38 + Math.random() * 76;
+            }
+        }
     }
 
     Plasma5Support.DataSource {
@@ -201,11 +234,9 @@ PlasmoidItem {
 
         if (newActive !== activeIndex) {
             if (newActive >= 0) {
-                idleAnim.stop();
                 aimPupil(taskModel.get(newActive).angle);
             } else {
                 pupilAnim.stop();
-                idleAnim.start();
             }
             activeIndex = newActive;
         }
@@ -243,6 +274,7 @@ PlasmoidItem {
             y: root.eyeCy
             width: 1
             height: 1
+            property real dashStep: 0
             Shape {
                 anchors.fill: parent
                 antialiasing: true
@@ -268,7 +300,7 @@ PlasmoidItem {
                     strokeStyle: model.isActive ? ShapePath.DashLine : ShapePath.SolidLine
                     capStyle: ShapePath.FlatCap
                     dashPattern: [10, 10]
-                    dashOffset: 0
+                    dashOffset: dashStep
                     startX: model.sx
                     startY: model.sy
                     PathCubic {
@@ -278,13 +310,6 @@ PlasmoidItem {
                         control1Y: model.c1y
                         control2X: model.c2x
                         control2Y: model.c2y
-                    }
-                    NumberAnimation on dashOffset {
-                        running: model.isActive
-                        from: 0
-                        to: -20
-                        duration: 1000
-                        loops: Animation.Infinite
                     }
                 }
             }
@@ -315,17 +340,7 @@ PlasmoidItem {
                     isOnline ? (isLocked ? "#26ff2244" : "#2ce0af68") : "#1a3b4252",
                     0.55);
             }
-            opacity: root.online ? 0.65 : 0.25
-            Behavior on opacity {
-                NumberAnimation { duration: 500 }
-            }
-            NumberAnimation on opacity {
-                running: root.online
-                from: 0.65
-                to: 0.88
-                duration: 2200
-                loops: Animation.Infinite
-            }
+            opacity: root.online ? root.haloOpacity : 0.25
         }
 
         Canvas {
@@ -461,13 +476,6 @@ PlasmoidItem {
             anchors.centerIn: parent
             width: parent.width - 18
             height: parent.height - 18
-            NumberAnimation on rotation {
-                from: 0
-                to: 360
-                duration: 120000
-                loops: Animation.Infinite
-                running: root.online
-            }
             Shape {
                 anchors.fill: parent
                 antialiasing: true
@@ -725,17 +733,7 @@ PlasmoidItem {
                         isActive ? "#26e0af68" : "#143b4252",
                         0.5);
                 }
-                opacity: model.isActive ? 0.9 : 0.4
-                Behavior on opacity {
-                    NumberAnimation { duration: 400 }
-                }
-                NumberAnimation on opacity {
-                    running: model.isActive
-                    from: 0.6
-                    to: 0.95
-                    duration: 1800
-                    loops: Animation.Infinite
-                }
+                opacity: model.isActive ? root.nodePulse : 0.4
             }
 
 
@@ -822,20 +820,8 @@ PlasmoidItem {
                             color: "transparent"
                             border.color: root.cNeonOrange
                             border.width: 1.2
-                            NumberAnimation on scale {
-                                running: model.isActive
-                                from: 0.6
-                                to: 2.1
-                                duration: 1400
-                                loops: Animation.Infinite
-                            }
-                            NumberAnimation on opacity {
-                                running: model.isActive
-                                from: 0.9
-                                to: 0
-                                duration: 1400
-                                loops: Animation.Infinite
-                            }
+                            scale: model.isActive ? root.dotScale : 1.0
+                            opacity: model.isActive ? root.dotOpacity : 1.0
                         }
                     }
                     Text {
@@ -986,25 +972,5 @@ PlasmoidItem {
         property: "pupilAngle"
         duration: 480
         easing.type: Easing.OutCubic
-    }
-
-    SequentialAnimation {
-        id: idleAnim
-        running: false
-        loops: Animation.Infinite
-        NumberAnimation {
-            target: root
-            property: "pupilAngle"
-            to: -38
-            duration: 2600
-            easing.type: Easing.InOutSine
-        }
-        NumberAnimation {
-            target: root
-            property: "pupilAngle"
-            to: 38
-            duration: 2600
-            easing.type: Easing.InOutSine
-        }
     }
 }
