@@ -35,6 +35,7 @@ KCM.SimpleKCM {
                 try {
                     const board = JSON.parse(out);
                     kanbanPage.boardGroups = board.groups ? board.groups : [];
+                    groupBox.currentIndex = -1;
                     kanbanPage.syncGroupChecks();
                 } catch (e) {
                     statusLabel.text = i18n("Failed to load groups: %1", out);
@@ -54,6 +55,9 @@ KCM.SimpleKCM {
                 } else if (source.indexOf("DAILY_NOTES_DIR") !== -1) {
                     if (out) dailyNotesDir.text = out;
                 }
+            } else if (source.indexOf("add-task") !== -1) {
+                newTaskTitle.text = "";
+                statusLabel.text = i18n("Task added");
             } else {
                 statusLabel.text = data.stderr ? data.stderr.trim() : i18n("Applied");
             }
@@ -142,6 +146,37 @@ KCM.SimpleKCM {
                 text: modelData
                 checked: false
                 onToggled: if (!kanbanPage.syncingGroups) kanbanPage.saveHidden();
+            }
+        }
+
+        QtControls.Label {
+            text: i18n("Add task")
+            font.bold: true
+        }
+        QtControls.Label {
+            text: i18n("Add a new task to the board: pick its group and type a title. Appears on the widget eye within a couple of seconds.")
+            wrapMode: Text.Wrap
+            opacity: 0.7
+        }
+        QtLayouts.RowLayout {
+            spacing: 6
+            QtControls.ComboBox {
+                id: groupBox
+                model: kanbanPage.boardGroups
+                QtLayouts.Layout.fillWidth: true
+            }
+            QtControls.TextField {
+                id: newTaskTitle
+                placeholderText: i18n("Task title")
+                QtLayouts.Layout.fillWidth: true
+            }
+            QtControls.Button {
+                text: i18n("Add")
+                enabled: groupBox.currentText !== "" && newTaskTitle.text.trim() !== ""
+                onClicked: {
+                    run("python3 " + kanbanPage.helper + " add-task " +
+                        encArg(groupBox.currentText) + " " + encArg(newTaskTitle.text.trim()));
+                }
             }
         }
 
