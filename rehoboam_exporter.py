@@ -80,6 +80,7 @@ def build_payload(tasks, active_task_id, today_durs, error=None):
         entries.append({
             "id": t["id"],
             "description": t["description"],
+            "group": t["group_name"],
             "category": "@" + t["group_name"],
             "run_seconds": seconds,
             "run_time": format_run_time(seconds),
