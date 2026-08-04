@@ -1,84 +1,68 @@
-q# REHOBOAM
+# REHOBOAM
 
-Octopus-armed task board with a HAL 9000 eye, driven by the Rehoboam task suite.
+An octopus-armed task board with a HAL 9000 eye, driven by a task-tracking
+suite built around a single source of truth: an Obsidian **KANBAN.md** file.
 
-REHOBOAM is a personal task-tracking stack built around a single source of
-truth: an Obsidian **KANBAN.md** file. It consists of:
+REHOBOAM has two faces:
 
-- a **gum-based TUI suite** (`rehoboam.sh`, `kanban.sh`, `timew.sh`) for
-  Kanban CRUD, TimeWarrior tracking, and daily-note sync, and
-- a **Plasma 6 desktop widget** (HAL-Octopus, `org.rehoboam.hal-octopus`)
-  that renders the open board as glowing task nodes on a HAL 9000 eye, with a
-  hover popup for full task info and a KDE configuration dialog.
+- a **gum-based terminal suite** (`rehoboam.sh`, `kanban.sh`, `timew.sh`) for
+  Kanban management, TimeWarrior time tracking, and daily-note sync;
+- a **Plasma 6 widget** (HAL-Octopus, `org.rehoboam.hal-octopus`) that renders
+  the open board as glowing task nodes on a HAL 9000 eye, with click-to-track,
+  a hover popup, and a full KDE configuration dialog.
 
 | | |
 |---|---|
 | Widget | HAL-Octopus v1.2 (Plasma 6 / Qt6) |
 | License | GPL-2.0-or-later |
-| Shell | bash 5+, [gum](https://github.com/charmbracelet/gum) required for the TUI |
+| Shell | bash 5+, [gum](https://github.com/charmbracelet/gum) |
 | Python | 3.9+ (stdlib only) |
-| External | [TimeWarrior](https://timewarrior.net/) 1.9+, SQLite3, Obsidian (optional) |
+| External | [TimeWarrior](https://timewarrior.net/) 1.9+, SQLite, Obsidian (optional) |
 
 ---
 
 ## Features
 
-- **Kanban**: groups and tasks in `KANBAN.md` (Obsidian Markdown) are
-  synchronized bidirectionally with a SQLite database — the DB is the
-  canonical store; the Markdown file is always regenerated and stays human-readable.
-- **TimeWarrior integration**: start/stop/continue/switch/cancel from the TUI
-  or the widget dialog. Intervals are tagged with the task's group and
-  annotated with the task description, so the exporter can attribute time to
-  the right task.
-- **Reports**: today / week summaries and per-task totals, all backed by the
+- **Kanban** — groups and tasks live in a SQLite database and are mirrored to
+  `KANBAN.md`; the Markdown file is regenerated and stays human-readable.
+- **TimeWarrior integration** — start, stop, switch, and cancel tracking from
+  the TUI or by clicking the widget's nodes. Intervals are tagged with the
+  task's group and annotated with the task description, so every tracked
+  interval is attributed to the right task.
+- **Reports** — today and week summaries plus per-task totals, backed by the
   SQLite `time_entries` table.
-- **Daily notes**: sync tracked time and board state into Obsidian daily notes.
-- **Widget**: the HAL-Octopus eye shows open tasks as nodes with live elapsed
-  time; hovering a node for a configurable delay (default 2 s) pops up the
-  full task panel. A single-instance Python daemon feeds it a JSON snapshot,
-  atomically rewritten once per second.
-- **KDE configuration dialog**: three pages — *Widget* (state file path,
-  polling interval, hover delay), *Kanban* (board file and daily-notes
-  directory), *TimeWarrior* (start/stop/continue + `maxtracking`, `verbose`,
-  `confirmation` settings).
+- **Daily notes** — tracked time and board state are written into the current
+  Obsidian daily note.
+- **Widget** — the HAL-Octopus eye shows open tasks with live elapsed time;
+  click a node to start tracking, click the active node to stop. A hover
+  popup shows full task details. A single-instance daemon feeds the widget an
+  atomic JSON snapshot every second.
+- **Configuration dialog** — three pages (Kanban, TimeWarrior, Widget) for
+  board paths, hidden groups, adding tasks, tracking actions, and polling.
 
 ## Architecture
 
 ```
-                  ┌─────────────────────────────────────────────────┐
-                  │                  KANBAN.md (Obsidian)            │
-                  └───────▲───────────────────────────▲─────────────┘
-                          │ sync (init_db, startup_sync)│ sync_to_daily_note
-        ┌─────────────────┴─────────┐        ┌─────────┴──────────┐
-        │ rehoboam_db.py            │        │ daily notes (Obsidian)
-        │ SQLite: groups / tasks /  │        └────────────────────┘
-        │ time_entries              │
-        └─────────▲─────────────────┘
-                  │
-  ┌───────────────┴───────────────────────────────────────────────┐
-  │  TUI (gum)                                    Widget (QML)    │
-  │  rehoboam.sh ── kanban.sh ──── rehoboam_db.py                 │
-  │            └─ timew.sh ── timew CLI ──┬─ rehoboam_db.py       │
-  │                                       │                       │
-  │  rehoboam_exporter.py (1 s tick) ─────┘                       │
-  │       │                                                       │
-  │       └─ ~/.cache/rehoboam_widget.json (atomic) ── DataSource ┘
-  └───────────────────────────────────────────────────────────────┘
+        KANBAN.md (Obsidian)                    daily notes (Obsidian)
+             │  startup_sync                          ▲
+             ▼                                        │ sync_to_daily_note
+        rehoboam_db.py  (SQLite: groups / tasks / time_entries)
+             ▲                     ▲
+             │                     │
+     kanban.sh / timew.sh    rehoboam_exporter.py (1 s tick)
+     (gum TUI)                     │ atomic JSON → ~/.cache/rehoboam_widget.json
+                                   ▼
+                      HAL-Octopus widget (QML, polls every pollInterval s)
 ```
 
-Data flows:
-
-1. `common.sh` / `rehoboam_db.py` load `~/.config/rehoboam/config`.
-2. The TUI mutates tasks and groups through `rehoboam_db.py`; the Markdown
-   file is regenerated on every entry (`startup_sync`).
-3. `timew` intervals are imported into `time_entries` (deduplicated by
-   `UNIQUE(start, end)`).
+1. `~/.config/rehoboam/config` is loaded by `common.sh` and `rehoboam_db.py`.
+2. The TUI mutates the board through `rehoboam_db.py`; `KANBAN.md` is
+   regenerated on every entry.
+3. Finished `timew` intervals are imported into `time_entries`, deduplicated
+   by `UNIQUE(start, end)`.
 4. `rehoboam_exporter.py` polls the DB and TimeWarrior once per second and
-   writes the widget snapshot atomically (tmp file + rename, single-instance
-   `flock`).
-5. The widget's `Plasma5Support.DataSource` runs
-   `rehoboam_config.py cat <state-file>` every `pollInterval` seconds and
-   renders `tasks[]` as eye nodes.
+   writes the widget snapshot atomically (single-instance via `flock`).
+5. The widget polls the snapshot and renders the tasks as eye nodes.
 
 ## Repository layout
 
@@ -89,43 +73,45 @@ rehoboam/
 │   └── contents/
 │       ├── config/
 │       │   ├── main.xml          # KConfigSkeleton: stateFile, pollInterval, hoverDelay
-│       │   └── config.qml        # dialog model: Widget / Kanban / TimeWarrior tabs
+│       │   └── config.qml        # dialog tabs: Kanban / TimeWarrior / Widget
 │       └── ui/
-│           ├── main.qml          # HAL eye, task nodes, hover popup, polling
+│           ├── main.qml          # HAL eye, task nodes, click-to-track, hover popup
 │           ├── configGeneral.qml # state file, poll interval, hover delay
-│           ├── configKanban.qml  # KANBAN_FILE / DAILY_NOTES_DIR write-through
-│           └── configTimew.qml   # start/stop/continue + timew settings
+│           ├── configKanban.qml  # add task, hidden groups, board paths
+│           └── configTimew.qml   # tracking actions + timew settings
 ├── rehoboam_db.py                # SQLite layer, Markdown sync, timew import, reports
-├── rehoboam_config.py            # write-through CLI helper for the widget dialog
-├── rehoboam_exporter.py          # 1 s widget-state daemon (atomic JSON)
+├── rehoboam_config.py            # CLI helper for the widget dialog
+├── rehoboam_exporter.py          # widget-state daemon (atomic JSON, 1 s tick)
 ├── common.sh                     # shared config, banner font, DB/shell helpers
-├── rehoboam.sh                   # TUI entry point (menu)
-├── kanban.sh                     # Kanban CRUD (gum)
+├── rehoboam.sh                   # TUI entry point
+├── kanban.sh                     # Kanban management (gum)
 ├── timew.sh                      # TimeWarrior front end + reports
+├── install.sh                    # portable installer / uninstaller
 └── reload-widget.sh              # dev loop: lint → sync → reload widget
 ```
 
 ## Requirements
 
-- Linux with KDE Plasma 6 (Qt 6 / QtQuick 6) for the widget
+- KDE Plasma 6 (Qt 6 / QtQuick 6) for the widget
 - Python 3.9+ (stdlib only)
-- [TimeWarrior](https://timewarrior.net/) ≥ 1.9
-- [gum](https://github.com/charmbracelet/gum) (TUI only)
+- TimeWarrior 1.9+
+- gum (TUI only)
 - Obsidian vault (optional — paths are configurable)
 
 ## Installation
 
-### 1. Installer script
+### Installer
 
 ```sh
 ./install.sh
 ```
 
-Copies the project to `~/.local/share/rehoboam`, patches the machine-specific
-paths baked into the widget QML, installs the plasmoid, links the commands
-into `~/.local/bin` (`rehoboam`, `kanban.sh`, `timew.sh`, `rehoboam-config`,
-`rehoboam-exporter`, `rehoboam-reload`), starts the exporter via a systemd
-user unit (or XDG autostart), and restarts plasmashell.
+The installer copies the project to `~/.local/share/rehoboam`, patches the
+machine-specific paths baked into the widget QML, installs the plasmoid,
+links the commands into `~/.local/bin` (`rehoboam`, `kanban.sh`, `timew.sh`,
+`rehoboam-config`, `rehoboam-exporter`, `rehoboam-reload`), starts the
+exporter via a systemd user unit (or XDG autostart), and restarts
+plasmashell.
 
 ```
 ./install.sh --prefix DIR        custom install prefix
@@ -136,16 +122,10 @@ user unit (or XDG autostart), and restarts plasmashell.
 ./install.sh --uninstall --purge also delete ~/.config/rehoboam, the DB and caches
 ```
 
-### 2. Manual setup
+### Manual setup
 
-Clone and configure paths (defaults assume an Obsidian vault layout):
-
-```sh
-git clone <your-fork-or-repo> rehoboam
-cd rehoboam
-```
-
-Create the config file if you need different paths:
+Clone the repository and, if your layout differs from the defaults, create a
+config file:
 
 ```sh
 mkdir -p ~/.config/rehoboam
@@ -155,8 +135,6 @@ DAILY_NOTES_DIR=/path/to/999 Daily Notes
 EOF
 ```
 
-Keys:
-
 | Key | Default | Used by |
 |---|---|---|
 | `KANBAN_FILE` | `~/Obsidian Vault/Computer Science/KANBAN.md` | `rehoboam_db.py`, `common.sh` |
@@ -164,80 +142,53 @@ Keys:
 | `REHOBOAM_DB_PATH` | `~/.config/rehoboam/rehoboam.db` | `rehoboam_db.py` |
 | `HIDDEN_GROUPS` | *(unset)* | `rehoboam_exporter.py` |
 
-`HIDDEN_GROUPS` is a comma-separated list of group names whose tasks are
-excluded from the octopus eye display (case-insensitive; the exporter re-reads
-the file on every tick, so changes appear within a second). It affects the
-widget display only — tracking and the TUI are unaffected. Groups containing
-commas aren't supported.
+`HIDDEN_GROUPS` is a comma-separated list of group names excluded from the
+octopus eye display (case-insensitive, re-read on every tick). It affects the
+widget display only — tracking and the TUI are unaffected. Group names
+containing commas are not supported.
 
-The file is `KEY=VALUE` per line with shell-quoted values — `common.sh`
+The file is `KEY=VALUE` per line with shell-quoted values; `common.sh`
 sources it directly and `rehoboam_db.py` parses it on import. The widget
-dialog rewrites it atomically (sorted keys, fsync + rename).
+dialog rewrites it atomically.
 
-### 3. TUI
+### Running the pieces
 
 ```sh
-./rehoboam.sh
+./rehoboam.sh    # TUI menu: Kanban → TimeW → Sync to Daily Note → Quit
 ```
 
-Menu: **Kanban**, **TimeW**, **Sync to Daily Note**, **Quit**.
-
-### 4. Widget daemon (exporter)
-
-The installer sets this up automatically (systemd user unit, falling back to
-XDG autostart). To run manually:
+The exporter daemon is started automatically by the installer. Manually:
 
 ```sh
 nohup python3 ~/rehoboam/rehoboam_exporter.py >> /tmp/rehoboam_exporter.log 2>&1 &
 ```
 
-The daemon is single-instance (`flock` on `~/.cache/rehoboam_widget.lock`)
-and writes `~/.cache/rehoboam_widget.json` once per second.
-
-### 5. Widget (dev reload)
-
-For development from this repo:
-
-```sh
-./reload-widget.sh        # lint → rsync → clear caches → restart plasmashell
-```
-
-The script installs the widget into
-`~/.local/share/plasma/plasmoids/org.rehoboam.hal-octopus` and restarts
-plasmashell. After that, add **HAL-Octopus** to a panel from the Plasma
-widget browser. (Alternatively copy `hal-octopus/` manually, then clear
-`~/.cache/plasma` and restart plasmashell.)
+It is single-instance (`flock` on `~/.cache/rehoboam_widget.lock`) and
+writes `~/.cache/rehoboam_widget.json` once per second. After installing the
+plasmoid, add **HAL-Octopus** to a panel from the Plasma widget browser.
 
 ## The widget
 
-- **Eye**: open tasks are rendered as nodes on the HAL 9000 eye assembly;
-  active tasks are highlighted and show live elapsed time (`run_time`).
-- **Click to track**: click a node to start TimeWarrior tracking for that
-  task, click the active node to stop, click another node to switch (one
-  click = start/stop, following the play/pause convention). The eye updates
-  within ~1 s via the next poll.
-- **Hover popup**: hover any node for `hoverDelay` ms (default 2000) to see
-  the full task panel — description, group, run time, and status.
-- **Polling**: `DataSource` runs
-  `python3 ~/rehoboam/rehoboam_config.py cat <stateFile>` every
-  `pollInterval` seconds (default 1, clamped to ≥ 1 s since the interval is
-  milliseconds).
-- **Config dialog**: right-click → *Configure*. Three tabs backed by
-  `main.xml` (KConfigSkeleton):
+- **Eye** — open tasks are rendered as nodes; the active task glows and shows
+  live elapsed time.
+- **Click to track** — click a node to start TimeWarrior tracking, click the
+  active node to stop, click another node to switch. The eye reflects the
+  change within ~1 s.
+- **Hover popup** — hover a node for `hoverDelay` ms (default 2000) to see
+  description, group, run time, and status.
+- **Polling** — the widget polls the state file every `pollInterval` seconds
+  (default 1).
+- **Configuration dialog** — right-click → *Configure*:
 
-  - **Widget** — `stateFile` (JSON snapshot path), `pollInterval` (s),
+  - **Kanban** — add a task (group dropdown + title), hide groups from the
+    eye, and set the board file / daily-notes directory. Edits write through
+    to `~/.config/rehoboam/config` atomically.
+  - **TimeWarrior** — start a task from live dropdowns (group + open tasks),
+    stop/continue, and toggle `maxtracking`, `verbose`, `confirmation`.
+  - **Widget** — `stateFile` (snapshot path), `pollInterval` (s),
     `hoverDelay` (ms).
-  - **Kanban** — `KANBAN_FILE`, `DAILY_NOTES_DIR` (edits write through to
-    `~/.config/rehoboam/config` atomically), a **Hidden from the octopus**
-    checkbox list (ticked groups' tasks are dropped from the eye display,
-    persisted as `HIDDEN_GROUPS`), and an **Add task** row: pick a group from
-    the dropdown, type a title, and the task lands on the board (and the eye,
-    within a couple of seconds).
-  - **TimeWarrior** — start a task from dropdowns populated live from the
-    board (group + open tasks), stop/continue, and toggle `maxtracking`,
-    `verbose`, `confirmation`.
 
-### JSON snapshot schema
+### Snapshot schema
 
 `~/.cache/rehoboam_widget.json`:
 
@@ -259,39 +210,36 @@ widget browser. (Alternatively copy `hal-octopus/` manually, then clear
 }
 ```
 
-`error` is included (instead of `tasks`) when a tick fails, so the widget
-stays alive and displays the problem.
+When a tick fails, an `error` field replaces `tasks` so the widget stays
+alive and displays the problem.
 
-## TimeWarrior integration protocol
+## TimeWarrior integration
 
 - `timew start GROUP` — the tag is the **group name**.
 - `timew annotate @1 TASK-DESCRIPTION` — the annotation is the **task
   description**, used for attribution.
-- On import (`import_timew_entries`), an annotation is matched to a task:
-  1. exact match against task descriptions (`match_task_id`),
-  2. fallback: group tag must equal the task's group, description fuzzy-match
-     (`match_task_by_group_tag`).
-- Intervals are imported every 30 exporter ticks and whenever the active
-  interval changes; duplicates are prevented by `UNIQUE(start, end)`.
-- Manual tracking: `timew track DURATION GROUP` + `timew annotate @1 TASK`.
+- On import, an annotation is matched to a task: first an exact description
+  match, then a fallback requiring the group tag to equal the task's group
+  with a fuzzy description match.
+- Intervals are imported every 30 ticks and whenever the active interval
+  changes; duplicates are prevented by `UNIQUE(start, end)`.
 
-## `rehoboam_config.py` — write-through helper
+## `rehoboam_config.py`
 
-The Plasma config pages cannot pass arbitrary text (paths with spaces,
-annotations, …) as command-line arguments, so QML URL-encodes every value
-(`encArg`: `encodeURIComponent` plus `! ' ( ) * ~`, which the Plasma
-executable engine hands to `/bin/sh`) and the helper decodes with
-`urllib.parse.unquote`.
+The Plasma config pages and the widget cannot pass arbitrary text as
+command-line arguments, so QML URL-encodes every value (`encArg` —
+`encodeURIComponent` plus `! ' ( ) * ~`, which the executable engine hands to
+`/bin/sh`) and the helper decodes with `urllib.parse.unquote`.
 
 ```
-rehoboam_config.py get KEY                 # print value from ~/.config/rehoboam/config
+rehoboam_config.py get KEY                 # value from ~/.config/rehoboam/config
 rehoboam_config.py set KEY VALUE           # set (VALUE URL-encoded), atomic rewrite
 rehoboam_config.py cat PATH                # print a file's contents (PATH URL-encoded)
 rehoboam_config.py list                    # {"groups": [...], "tasks": {group: [tasks]}}
 rehoboam_config.py get-timew KEY           # current timew config value
 rehoboam_config.py timew-config KEY VALUE  # timew config KEY VALUE
 rehoboam_config.py timew-start GROUP TASK  # timew start GROUP + annotate @1 TASK
-rehoboam_config.py timew-switch GROUP TASK # stop current (if any), then start GROUP + annotate @1 TASK
+rehoboam_config.py timew-switch GROUP TASK # stop current (if any), then start + annotate
 rehoboam_config.py add-task GROUP TITLE    # add a task to GROUP (DB + KANBAN.md + daily note)
 ```
 
@@ -311,29 +259,26 @@ time_entries  (id, task_id FK→tasks ON DELETE SET NULL, timew_id,
 ## Development
 
 ```sh
-./reload-widget.sh   # qmllint → rsync to plasmoids dir → clear QML caches → restart plasmashell
+./reload-widget.sh   # qmllint → rsync to the plasmoids dir → clear caches → restart plasmashell
 ```
 
-Each widget dialog page declares the `cfg_*` properties it does not use to
-silence `SimpleKCM does not have a property` warnings from the KCM framework.
-
-### Gotchas
+Gotchas:
 
 - The Plasma executable engine runs commands via `/bin/sh` — shell-special
   characters must stay percent-encoded (`encArg`).
-- Widget polling interval is **milliseconds**; `pollInterval` (seconds) is
-  multiplied by 1000 and clamped to ≥ 1 s.
-- Never pipe the widget helper through `head`/truncating tools when testing —
-  a closed pipe delivers SIGPIPE and can kill the `timew` subprocess mid-write.
+- The widget polling interval is **milliseconds**; `pollInterval` (seconds)
+  is multiplied by 1000 and clamped to ≥ 1 s.
+- Don't pipe the widget helper through truncating tools when testing — a
+  closed pipe delivers SIGPIPE and can kill the `timew` subprocess mid-write.
 
 ## Troubleshooting
 
 | Symptom | Fix |
 |---|---|
-| Widget shows nothing / no node updates | Is `rehoboam_exporter.py` running? Check `~/.cache/rehoboam_widget.json` and `journalctl --user -b \| grep rehoboam` |
-| `sh: syntax error near unexpected token` | Caused by unencoded shell-special chars in task text — use `encArg`/URL-encoded args |
+| Widget shows nothing / no node updates | Is the exporter running? Check `~/.cache/rehoboam_widget.json` and `journalctl --user -b \| grep rehoboam` |
+| `sh: syntax error near unexpected token` | Unencoded shell-special characters — always use `encArg`/URL-encoded args |
 | Board file not found | Set `KANBAN_FILE` in `~/.config/rehoboam/config` or the widget's Kanban page |
-| Config dialog warnings (`SimpleKCM ... cfg_*`) | Cosmetic; declare the unused `cfg_*` properties on the page |
+| `SimpleKCM ... cfg_*` dialog warnings | Cosmetic; declare the unused `cfg_*` properties on the page |
 
 ## License
 
