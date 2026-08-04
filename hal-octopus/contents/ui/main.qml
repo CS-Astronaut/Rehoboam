@@ -51,9 +51,7 @@ PlasmoidItem {
     property real haloOpacity: 0.65
     property real reticleStep: 1
     property real nodePulse: 0.775
-    property real dotPhase: 0
-    property real dotScale: 1.0
-    property real dotOpacity: 1.0
+    property real armFlash: 1
 
     opacity: root.online ? 1.0 : 0.72
     Behavior on opacity {
@@ -72,14 +70,7 @@ PlasmoidItem {
             phase = phase + 0.18;
             root.haloOpacity = 0.765 + 0.115 * Math.sin(phase);
             root.nodePulse = 0.6 + 0.35 * (0.5 + 0.5 * Math.sin(phase));
-            root.dotPhase = (root.dotPhase + 0.24) % 1;
-            root.dotScale = 0.6 + 1.5 * root.dotPhase;
-            root.dotOpacity = 0.9 * (1 - root.dotPhase);
-            if (root.activeIndex >= 0) {
-                var arm = armRepeater.itemAt(root.activeIndex);
-                if (arm)
-                    arm.dashStep -= 6;
-            }
+            root.armFlash = 0.5 + 0.5 * Math.sin(phase * 3);
             if (++snapCount >= 10) {
                 snapCount = 0;
                 if (!root.hasActive)
@@ -274,7 +265,6 @@ PlasmoidItem {
             y: root.eyeCy
             width: 1
             height: 1
-            property real dashStep: 0
             Shape {
                 anchors.fill: parent
                 antialiasing: true
@@ -295,12 +285,10 @@ PlasmoidItem {
                 }
                 ShapePath {
                     fillColor: "transparent"
-                    strokeColor: model.isActive ? root.cNeonOrange : "#4a5170"
+                    strokeColor: model.isActive ? Qt.rgba(1.0, 0.62, 0.39, 0.35 + 0.65 * root.armFlash) : "#4a5170"
                     strokeWidth: model.isActive ? 6 : 2
-                    strokeStyle: model.isActive ? ShapePath.DashLine : ShapePath.SolidLine
+                    strokeStyle: ShapePath.SolidLine
                     capStyle: ShapePath.FlatCap
-                    dashPattern: [10, 10]
-                    dashOffset: dashStep
                     startX: model.sx
                     startY: model.sy
                     PathCubic {
@@ -813,15 +801,6 @@ PlasmoidItem {
                             height: 5
                             radius: 2.5
                             color: root.cNeonOrange
-                        }
-                        Rectangle {
-                            anchors.fill: parent
-                            radius: 6
-                            color: "transparent"
-                            border.color: root.cNeonOrange
-                            border.width: 1.2
-                            scale: model.isActive ? root.dotScale : 1.0
-                            opacity: model.isActive ? root.dotOpacity : 1.0
                         }
                     }
                     Text {
