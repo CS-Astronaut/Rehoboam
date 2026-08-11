@@ -41,6 +41,7 @@ PlasmoidItem {
     property int activeIndex: -1
     property bool online: false
     property string actionError: ""
+    property var boardGroups: []
 
     property real eyeCx: width / 2
     property real eyeCy: height / 2
@@ -107,6 +108,20 @@ PlasmoidItem {
         connectedSources: []
         onNewData: function(source, data) {
             actionSource.disconnectSource(source);
+            const out = (data.stdout ? data.stdout : "").trim();
+            if (source.indexOf(" list") !== -1) {
+                try {
+                    const board = JSON.parse(out);
+                    root.boardGroups = board.groups ? board.groups : [];
+                    groupCombo.model = root.boardGroups;
+                    groupCombo.currentIndex = -1;
+                    groupCombo.editText = "";
+                } catch (e) {
+                    root.actionError = "Failed to load groups: " + out;
+                    errorTimer.restart();
+                }
+                return;
+            }
             if (data.stderr) {
                 root.actionError = data.stderr.trim();
                 errorTimer.restart();
@@ -124,6 +139,31 @@ PlasmoidItem {
     function runContextAction(cmd) {
         root.hidePopup();
         runAction("python3 " + root.helper + " " + cmd);
+    }
+
+    function openAddTask() {
+        root.hidePopup();
+        addTaskPopup.visible = true;
+        addTaskPopup.opacity = 1;
+        newTaskTitle.text = "";
+        runAction("python3 " + root.helper + " list");
+        newTaskTitle.forceActiveFocus();
+    }
+
+    function closeAddTask() {
+        addTaskPopup.visible = false;
+        addTaskPopup.opacity = 0;
+    }
+
+    function submitAddTask() {
+        const group = groupCombo.editText.trim();
+        const title = newTaskTitle.text.trim();
+        if (!group || !title) {
+            return;
+        }
+        root.closeAddTask();
+        runAction("python3 " + root.helper + " add-task " +
+                  encArg(group) + " " + encArg(title));
     }
 
     function toggleTracking(entry) {
@@ -689,6 +729,16 @@ PlasmoidItem {
         }
     }
 
+    MouseArea {
+        z: 2
+        x: root.eyeCx - root.eyeR
+        y: root.eyeCy - root.eyeR
+        width: root.eyeR * 2
+        height: root.eyeR * 2
+        cursorShape: Qt.PointingHandCursor
+        onClicked: root.openAddTask()
+    }
+
     Text {
         text: "OFFLINE"
         visible: !root.online
@@ -984,6 +1034,81 @@ PlasmoidItem {
         }
     }
 
+    MouseArea {
+        id: addTaskDismiss
+        z: 9
+        anchors.fill: parent
+        visible: addTaskPopup.visible
+        onClicked: root.closeAddTask()
+    }
+
+    Rectangle {
+        id: addTaskPopup
+        z: 10
+        visible: false
+        width: Math.min(360, root.width - 24)
+        height: addTaskLayout.implicitHeight + 32
+        anchors.centerIn: parent
+        radius: 12
+        color: "#2e3550"
+        border.color: "#7aa2f7"
+        border.width: 2
+        opacity: 0
+        focus: true
+        Keys.onEscapePressed: root.closeAddTask()
+
+        ColumnLayout {
+            id: addTaskLayout
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.top: parent.top
+            anchors.margins: 16
+            spacing: 10
+
+            Text {
+                text: i18n("Add task")
+                color: root.cFg
+                font.pixelSize: 14
+                font.bold: true
+            }
+
+            Text {
+                text: i18n("Group (pick or type new)")
+                color: root.cDim
+                font.pixelSize: 10
+            }
+
+            QtControls.ComboBox {
+                id: groupCombo
+                editable: true
+                Layout.fillWidth: true
+            }
+
+            QtControls.TextField {
+                id: newTaskTitle
+                placeholderText: i18n("Task title")
+                Layout.fillWidth: true
+                onAccepted: root.submitAddTask()
+            }
+
+            RowLayout {
+                width: parent.width
+                spacing: 8
+                Item {
+                    Layout.fillWidth: true
+                }
+                QtControls.Button {
+                    text: i18n("Cancel")
+                    onClicked: root.closeAddTask()
+                }
+                QtControls.Button {
+                    text: i18n("Add task")
+                    enabled: groupCombo.editText.trim() !== "" && newTaskTitle.text.trim() !== ""
+                    onClicked: root.submitAddTask()
+                }
+            }
+        }
+    }
 
     QtControls.Menu {
         id: contextMenu

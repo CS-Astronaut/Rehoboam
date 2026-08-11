@@ -209,6 +209,9 @@ timew annotate @1 "fix bug"     # annotation = the task description
   the active node glows, its arm flashes, and the pupil locks onto it.
 - **Click to track** — click a node to start TimeWarrior, click the active node
   to stop, click another node to switch. Updates land within ~1 s.
+- **Click the eye** — opens an *Add task* popup with an editable group picker
+  (pick an existing group or type a new one, auto-created) and a title field.
+  The new node appears within ~1 s.
 - **Right-click menu** — right-click a node for *Mark done* (moves it to the
   `done` group), *Postpone* (moves it to the `future` group), or *Delete*.
   Changes land within ~1 s.
