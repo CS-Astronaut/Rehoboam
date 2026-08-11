@@ -38,6 +38,8 @@ load_env_config()
 
 DB_PATH = os.getenv("REHOBOAM_DB_PATH", os.path.expanduser("~/.config/rehoboam/rehoboam.db"))
 
+DEFAULT_GROUPS = ("todo", "other", "future")
+
 
 def get_db_connection() -> sqlite3.Connection:
     """Returns a SQLite connection with PRAGMA foreign_keys = ON and Row factory."""
@@ -100,6 +102,22 @@ def init_db():
                     FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE SET NULL
                 )
             """)
+
+    ensure_default_groups()
+
+
+def ensure_default_groups():
+    """Seeds DEFAULT_GROUPS into an empty groups table (fresh install)."""
+    with get_db_connection() as conn:
+        count = conn.execute("SELECT COUNT(*) FROM groups").fetchone()[0]
+        if count != 0:
+            return
+        for position, name in enumerate(DEFAULT_GROUPS):
+            conn.execute(
+                "INSERT INTO groups (name, position) VALUES (?, ?)",
+                (name, position)
+            )
+        conn.commit()
 
 
 # ===========================================================================

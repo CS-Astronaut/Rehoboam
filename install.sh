@@ -119,6 +119,7 @@ sys.path.insert(0, '$PREFIX')
 import rehoboam_db
 rehoboam_db.startup_sync()
 " >/dev/null 2>&1 || echo "  [WARN] DB init failed (is timew installed?)"
+    echo "  [INFO] ensured default groups: todo, other, future"
 }
 
 make_links() {

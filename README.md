@@ -110,6 +110,8 @@ machine-specific paths baked into the widget QML, installs the plasmoid, and
 links the commands into `~/.local/bin` (`rehoboam`, `kanban`, `timew`,
 `rehoboam-config`, `rehoboam-exporter`, `rehoboam-reload`). It then starts the
 exporter via a systemd user unit (or XDG autostart) and restarts plasmashell.
+A fresh database is seeded with the default groups `todo`, `other`, and
+`future`.
 
 ```bash
 ./install.sh --prefix DIR         # custom install prefix
