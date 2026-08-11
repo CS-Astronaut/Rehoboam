@@ -44,6 +44,7 @@ PlasmoidItem {
     property var boardGroups: []
     property string popupMode: "add"
     property var popupTask: null
+    property var pendingTrack: null
 
     property real eyeCx: width / 2
     property real eyeCy: height / 2
@@ -200,14 +201,51 @@ PlasmoidItem {
     function toggleTracking(entry) {
         root.hidePopup();
         if (entry.isActive) {
+            root.pendingTrack = { action: "stop" };
+            confirmTrackTitle.text = i18n("Stop tracking");
+            confirmTrackSub.visible = false;
+            confirmTrackButton.text = i18n("Stop");
+            confirmPopup.visible = true;
+            confirmPopup.opacity = 1;
+            confirmPopup.forceActiveFocus();
+            return;
+        }
+        const isSwitch = root.hasActive;
+        root.pendingTrack = {
+            action: isSwitch ? "switch" : "start",
+            group: entry.group,
+            description: entry.description
+        };
+        confirmTrackTitle.text = isSwitch ? i18n("Switch tracking") : i18n("Start tracking");
+        confirmTrackSub.text = i18n("This will stop the previous timer!");
+        confirmTrackSub.visible = isSwitch;
+        confirmTrackButton.text = isSwitch ? i18n("Switch") : i18n("Start");
+        confirmPopup.visible = true;
+        confirmPopup.opacity = 1;
+        confirmPopup.forceActiveFocus();
+    }
+
+    function confirmTrack() {
+        const p = root.pendingTrack;
+        if (!p) {
+            return;
+        }
+        root.cancelTrack();
+        if (p.action === "stop") {
             runAction("timew stop");
-        } else if (root.hasActive) {
+        } else if (p.action === "switch") {
             runAction("python3 " + root.helper + " timew-switch " +
-                      encArg(entry.group) + " " + encArg(entry.description));
+                      encArg(p.group) + " " + encArg(p.description));
         } else {
             runAction("python3 " + root.helper + " timew-start " +
-                      encArg(entry.group) + " " + encArg(entry.description));
+                      encArg(p.group) + " " + encArg(p.description));
         }
+    }
+
+    function cancelTrack() {
+        root.pendingTrack = null;
+        confirmPopup.visible = false;
+        confirmPopup.opacity = 0;
     }
 
     function categoryColor(cat) {
@@ -1136,6 +1174,72 @@ PlasmoidItem {
                     text: root.popupMode === "edit" ? i18n("Save") : i18n("Add task")
                     enabled: groupCombo.editText.trim() !== "" && newTaskTitle.text.trim() !== ""
                     onClicked: root.submitAddTask()
+                }
+            }
+        }
+    }
+
+    MouseArea {
+        id: confirmTrackDismiss
+        z: 9
+        anchors.fill: parent
+        visible: confirmPopup.visible
+        onClicked: root.cancelTrack()
+    }
+
+    Rectangle {
+        id: confirmPopup
+        z: 10
+        visible: false
+        width: Math.min(340, root.width - 24)
+        height: confirmTrackLayout.implicitHeight + 32
+        anchors.centerIn: parent
+        radius: 12
+        color: "#2e3550"
+        border.color: "#7aa2f7"
+        border.width: 2
+        opacity: 0
+        focus: true
+        Keys.onEscapePressed: root.cancelTrack()
+
+        ColumnLayout {
+            id: confirmTrackLayout
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.top: parent.top
+            anchors.margins: 16
+            spacing: 10
+
+            Text {
+                id: confirmTrackTitle
+                color: root.cFg
+                font.pixelSize: 14
+                font.bold: true
+            }
+
+            Text {
+                id: confirmTrackSub
+                width: parent.width
+                height: paintedHeight
+                color: root.cOrange
+                font.pixelSize: 11
+                wrapMode: Text.WrapAnywhere
+                lineHeight: 1.25
+            }
+
+            RowLayout {
+                width: parent.width
+                spacing: 8
+                Item {
+                    Layout.fillWidth: true
+                }
+                QtControls.Button {
+                    text: i18n("Cancel")
+                    onClicked: root.cancelTrack()
+                }
+                QtControls.Button {
+                    id: confirmTrackButton
+                    onClicked: root.confirmTrack()
                 }
             }
         }

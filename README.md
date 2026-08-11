@@ -210,7 +210,9 @@ timew annotate @1 "fix bug"     # annotation = the task description
 - **Eye** — open tasks render as nodes on bezier octopus arms. When tracking,
   the active node glows, its arm flashes, and the pupil locks onto it.
 - **Click to track** — click a node to start TimeWarrior, click the active node
-  to stop, click another node to switch. Updates land within ~1 s.
+  to stop, click another node to switch. Starting, stopping, and switching all
+  ask for confirmation first (switching warns that the current timer will be
+  stopped); updates land within ~1 s.
 - **Click the eye** — opens an *Add task* popup with an editable group picker
   (pick an existing group or type a new one, auto-created) and a title field.
   The new node appears within ~1 s.
