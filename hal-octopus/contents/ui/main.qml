@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Controls as QtControls
 import QtQuick.Layouts
 import QtQuick.Shapes
 import org.kde.plasma.core as PlasmaCore
@@ -29,8 +30,9 @@ PlasmoidItem {
     readonly property color cPanelTop: "#232943"
     readonly property color cPanelBot: "#131622"
 
+    readonly property string helper: "/home/rigel/.local/share/rehoboam/rehoboam_config.py"
     property string stateFile: plasmoid.configuration.stateFile
-    property string stateCmd: "python3 /home/rigel/rehoboam/rehoboam_config.py cat " + encArg(stateFile)
+    property string stateCmd: "python3 " + root.helper + " cat " + encArg(stateFile)
 
     function encArg(s) {
         return encodeURIComponent(s).replace(/[!'()*~]/g, c => "%" + c.charCodeAt(0).toString(16).toUpperCase());
@@ -38,6 +40,7 @@ PlasmoidItem {
     property var taskModel: ListModel {}
     property int activeIndex: -1
     property bool online: false
+    property string actionError: ""
 
     property real eyeCx: width / 2
     property real eyeCy: height / 2
@@ -105,7 +108,11 @@ PlasmoidItem {
         onNewData: function(source, data) {
             actionSource.disconnectSource(source);
             if (data.stderr) {
+                root.actionError = data.stderr.trim();
+                errorTimer.restart();
                 console.warn("rehoboam action failed:", data.stderr.trim());
+            } else {
+                root.actionError = "";
             }
         }
     }
@@ -114,15 +121,20 @@ PlasmoidItem {
         actionSource.connectSource(cmd);
     }
 
+    function runContextAction(cmd) {
+        root.hidePopup();
+        runAction("python3 " + root.helper + " " + cmd);
+    }
+
     function toggleTracking(entry) {
         root.hidePopup();
         if (entry.isActive) {
             runAction("timew stop");
         } else if (root.hasActive) {
-            runAction("python3 /home/rigel/rehoboam/rehoboam_config.py timew-switch " +
+            runAction("python3 " + root.helper + " timew-switch " +
                       encArg(entry.group) + " " + encArg(entry.description));
         } else {
-            runAction("python3 /home/rigel/rehoboam/rehoboam_config.py timew-start " +
+            runAction("python3 " + root.helper + " timew-start " +
                       encArg(entry.group) + " " + encArg(entry.description));
         }
     }
@@ -687,6 +699,24 @@ PlasmoidItem {
         y: root.eyeCy + root.eyeR + 16
     }
 
+    Text {
+        text: root.actionError
+        visible: root.actionError !== ""
+        color: root.cRed
+        font.pixelSize: 9
+        width: parent.width - 60
+        horizontalAlignment: Text.AlignHCenter
+        wrapMode: Text.Wrap
+        anchors.horizontalCenter: parent.horizontalCenter
+        y: root.eyeCy + root.eyeR + 28
+    }
+
+    Timer {
+        id: errorTimer
+        interval: 5000
+        onTriggered: root.actionError = ""
+    }
+
     Repeater {
         id: nodeRepeater
         z: 2
@@ -768,6 +798,7 @@ PlasmoidItem {
                 z: 5
                 anchors.fill: parent
                 hoverEnabled: true
+                acceptedButtons: Qt.LeftButton | Qt.RightButton
                 cursorShape: Qt.PointingHandCursor
                 Timer {
                     id: hoverTimer
@@ -779,7 +810,16 @@ PlasmoidItem {
                     hoverTimer.stop();
                     root.hidePopup();
                 }
-                onClicked: root.toggleTracking(model)
+                onClicked: function(mouse) {
+                    if (mouse.button === Qt.RightButton) {
+                        hoverTimer.stop();
+                        root.hidePopup();
+                        contextMenu.target = model;
+                        contextMenu.popup();
+                    } else {
+                        root.toggleTracking(model);
+                    }
+                }
             }
 
             Column {
@@ -944,6 +984,23 @@ PlasmoidItem {
         }
     }
 
+
+    QtControls.Menu {
+        id: contextMenu
+        property var target: null
+        QtControls.MenuItem {
+            text: i18n("Mark done")
+            onTriggered: root.runContextAction("task-done " + contextMenu.target.id)
+        }
+        QtControls.MenuItem {
+            text: i18n("Postpone")
+            onTriggered: root.runContextAction("task-move " + contextMenu.target.id + " " + encArg("future"))
+        }
+        QtControls.MenuItem {
+            text: i18n("Delete")
+            onTriggered: root.runContextAction("task-delete " + contextMenu.target.id)
+        }
+    }
 
     NumberAnimation {
         id: pupilAnim

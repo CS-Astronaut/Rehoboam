@@ -7,7 +7,7 @@ import org.kde.plasma.plasma5support as Plasma5Support
 KCM.SimpleKCM {
     id: timewPage
 
-    readonly property string helper: "/home/rigel/rehoboam/rehoboam_config.py"
+    readonly property string helper: "/home/rigel/.local/share/rehoboam/rehoboam_config.py"
     property var boardTasks: ({})
 
     property string cfg_stateFile: ""

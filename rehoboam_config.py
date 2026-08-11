@@ -16,6 +16,9 @@ Subcommands (all values URL-encoded where noted):
   timew-start GROUP TASK     timew start GROUP + timew annotate @1 TASK (both URL-encoded)
   timew-switch GROUP TASK    stop current tracking (if any), then timew-start (both URL-encoded)
   add-task GROUP TITLE       add a task to GROUP in the rehoboam DB (both URL-encoded)
+  task-done ID               mark task ID done (moves it to the 'done' group)
+  task-delete ID             delete task ID
+  task-move ID GROUP         move task ID to GROUP (URL-encoded, created if missing)
 
 The config file is sourced by common.sh and parsed by rehoboam_db.py, so values
 are written shell-quoted (shlex.quote).
@@ -130,6 +133,12 @@ def main():
     elif cmd == "add-task":
         group, title = expand(sys.argv[2]), expand(sys.argv[3])
         rehoboam_db.add_task(group, title)
+    elif cmd == "task-done":
+        rehoboam_db.mark_task_done(int(sys.argv[2]))
+    elif cmd == "task-delete":
+        rehoboam_db.delete_task(int(sys.argv[2]))
+    elif cmd == "task-move":
+        rehoboam_db.move_task(int(sys.argv[2]), expand(sys.argv[3]))
     else:
         print(f"unknown command: {cmd}", file=sys.stderr)
         return 2

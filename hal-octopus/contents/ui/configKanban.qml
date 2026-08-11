@@ -7,7 +7,7 @@ import org.kde.plasma.plasma5support as Plasma5Support
 KCM.SimpleKCM {
     id: kanbanPage
 
-    readonly property string helper: "/home/rigel/rehoboam/rehoboam_config.py"
+    readonly property string helper: "/home/rigel/.local/share/rehoboam/rehoboam_config.py"
 
     property string cfg_stateFile: ""
     property string cfg_stateFileDefault: ""

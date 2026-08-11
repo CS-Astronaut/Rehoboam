@@ -209,6 +209,9 @@ timew annotate @1 "fix bug"     # annotation = the task description
   the active node glows, its arm flashes, and the pupil locks onto it.
 - **Click to track** — click a node to start TimeWarrior, click the active node
   to stop, click another node to switch. Updates land within ~1 s.
+- **Right-click menu** — right-click a node for *Mark done* (moves it to the
+  `done` group), *Postpone* (moves it to the `future` group), or *Delete*.
+  Changes land within ~1 s.
 - **Hover popup** — after `hoverDelay` ms, a card shows category, run time, task
   `#id`, and description.
 - **Polling** — the widget polls the state file every `pollInterval` seconds
@@ -262,6 +265,9 @@ rehoboam-config timew-config KEY VALUE  # timew config KEY VALUE
 rehoboam-config timew-start GROUP TASK  # timew start + annotate @1
 rehoboam-config timew-switch GROUP TASK # stop current, then start + annotate
 rehoboam-config add-task GROUP TITLE    # add a task to the board (DB)
+rehoboam-config task-done ID            # mark task done (moves to 'done' group)
+rehoboam-config task-delete ID          # delete a task
+rehoboam-config task-move ID GROUP      # move a task to another group
 ```
 
 ## TimeWarrior integration
