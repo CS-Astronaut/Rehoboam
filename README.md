@@ -212,9 +212,10 @@ timew annotate @1 "fix bug"     # annotation = the task description
 - **Click the eye** — opens an *Add task* popup with an editable group picker
   (pick an existing group or type a new one, auto-created) and a title field.
   The new node appears within ~1 s.
-- **Right-click menu** — right-click a node for *Mark done* (moves it to the
-  `done` group), *Postpone* (moves it to the `future` group), or *Delete*.
-  Changes land within ~1 s.
+- **Right-click menu** — right-click a node for *Edit…* (rename the task and/or
+  move it to another group via the same popup as Add task), *Mark done* (moves
+  it to the `done` group), *Postpone* (moves it to the `future` group), or
+  *Delete*. Changes land within ~1 s.
 - **Hover popup** — after `hoverDelay` ms, a card shows category, run time, task
   `#id`, and description.
 - **Polling** — the widget polls the state file every `pollInterval` seconds

@@ -19,6 +19,7 @@ Subcommands (all values URL-encoded where noted):
   task-done ID               mark task ID done (moves it to the 'done' group)
   task-delete ID             delete task ID
   task-move ID GROUP         move task ID to GROUP (URL-encoded, created if missing)
+  task-rename ID TITLE       rename task ID to TITLE (URL-encoded)
 
 The config file is sourced by common.sh and parsed by rehoboam_db.py, so values
 are written shell-quoted (shlex.quote).
@@ -139,6 +140,8 @@ def main():
         rehoboam_db.delete_task(int(sys.argv[2]))
     elif cmd == "task-move":
         rehoboam_db.move_task(int(sys.argv[2]), expand(sys.argv[3]))
+    elif cmd == "task-rename":
+        rehoboam_db.edit_task_text(int(sys.argv[2]), expand(sys.argv[3]))
     else:
         print(f"unknown command: {cmd}", file=sys.stderr)
         return 2

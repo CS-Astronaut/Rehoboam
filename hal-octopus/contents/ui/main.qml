@@ -42,6 +42,8 @@ PlasmoidItem {
     property bool online: false
     property string actionError: ""
     property var boardGroups: []
+    property string popupMode: "add"
+    property var popupTask: null
 
     property real eyeCx: width / 2
     property real eyeCy: height / 2
@@ -115,7 +117,11 @@ PlasmoidItem {
                     root.boardGroups = board.groups ? board.groups : [];
                     groupCombo.model = root.boardGroups;
                     groupCombo.currentIndex = -1;
-                    groupCombo.editText = "";
+                    if (root.popupMode === "edit" && root.popupTask) {
+                        groupCombo.editText = root.popupTask.group;
+                    } else {
+                        groupCombo.editText = "";
+                    }
                 } catch (e) {
                     root.actionError = "Failed to load groups: " + out;
                     errorTimer.restart();
@@ -143,9 +149,22 @@ PlasmoidItem {
 
     function openAddTask() {
         root.hidePopup();
+        root.popupMode = "add";
+        root.popupTask = null;
         addTaskPopup.visible = true;
         addTaskPopup.opacity = 1;
         newTaskTitle.text = "";
+        runAction("python3 " + root.helper + " list");
+        newTaskTitle.forceActiveFocus();
+    }
+
+    function openEditTask() {
+        root.hidePopup();
+        root.popupMode = "edit";
+        root.popupTask = contextMenu.target;
+        addTaskPopup.visible = true;
+        addTaskPopup.opacity = 1;
+        newTaskTitle.text = contextMenu.target.description;
         runAction("python3 " + root.helper + " list");
         newTaskTitle.forceActiveFocus();
     }
@@ -161,9 +180,21 @@ PlasmoidItem {
         if (!group || !title) {
             return;
         }
+        if (root.popupMode === "edit" && root.popupTask) {
+            const task = root.popupTask;
+            if (group !== task.group) {
+                runAction("python3 " + root.helper + " task-move " +
+                          task.id + " " + encArg(group));
+            }
+            if (title !== task.description) {
+                runAction("python3 " + root.helper + " task-rename " +
+                          task.id + " " + encArg(title));
+            }
+        } else {
+            runAction("python3 " + root.helper + " add-task " +
+                      encArg(group) + " " + encArg(title));
+        }
         root.closeAddTask();
-        runAction("python3 " + root.helper + " add-task " +
-                  encArg(group) + " " + encArg(title));
     }
 
     function toggleTracking(entry) {
@@ -1066,7 +1097,7 @@ PlasmoidItem {
             spacing: 10
 
             Text {
-                text: i18n("Add task")
+                text: root.popupMode === "edit" ? i18n("Edit task") : i18n("Add task")
                 color: root.cFg
                 font.pixelSize: 14
                 font.bold: true
@@ -1102,7 +1133,7 @@ PlasmoidItem {
                     onClicked: root.closeAddTask()
                 }
                 QtControls.Button {
-                    text: i18n("Add task")
+                    text: root.popupMode === "edit" ? i18n("Save") : i18n("Add task")
                     enabled: groupCombo.editText.trim() !== "" && newTaskTitle.text.trim() !== ""
                     onClicked: root.submitAddTask()
                 }
@@ -1113,6 +1144,10 @@ PlasmoidItem {
     QtControls.Menu {
         id: contextMenu
         property var target: null
+        QtControls.MenuItem {
+            text: i18n("Edit…")
+            onTriggered: root.openEditTask()
+        }
         QtControls.MenuItem {
             text: i18n("Mark done")
             onTriggered: root.runContextAction("task-done " + contextMenu.target.id)
