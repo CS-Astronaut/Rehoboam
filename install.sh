@@ -68,9 +68,9 @@ find_old_paths() {
     # The repo's QML has machine-specific paths baked in (python3 <dir>/rehoboam_config.py
     # and <home>/.cache/rehoboam_widget.json). Detect them instead of hardcoding.
     local qml="$SCRIPT_DIR/hal-octopus/contents/ui/main.qml"
-    OLD_REPO_DIR="$(grep -oP 'python3 \K/[^ ]*/rehoboam_config\.py' "$qml" 2>/dev/null | head -1 | xargs -r dirname)"
+    OLD_REPO_DIR="$(grep -oP '\K/[^ ]*/rehoboam_config\.py' "$qml" 2>/dev/null | head -1 | xargs -r dirname || true)"
     OLD_REPO_DIR="${OLD_REPO_DIR:-/home/rigel/rehoboam}"
-    OLD_CACHE="$(grep -oP '\K/[^<"]*/\.cache/rehoboam_widget\.json' "$SCRIPT_DIR/hal-octopus/contents/config/main.xml" 2>/dev/null | head -1 | xargs -r dirname)"
+    OLD_CACHE="$(grep -oP '\K/[^<"]*/\.cache/rehoboam_widget\.json' "$SCRIPT_DIR/hal-octopus/contents/config/main.xml" 2>/dev/null | head -1 | xargs -r dirname || true)"
     OLD_CACHE="${OLD_CACHE:-$OLD_REPO_DIR/.cache}"
     echo "  [INFO] patching references to $OLD_REPO_DIR -> $PREFIX"
     echo "  [INFO] patching references to $OLD_CACHE     -> $CACHE_DIR"
