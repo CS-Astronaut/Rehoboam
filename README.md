@@ -1,7 +1,7 @@
 <h1 align="center">REHOBOAM</h1>
 
 <p align="center">
-<b>An octopus-armed task board with a HAL 9000 eye — one Obsidian <code>KANBAN.md</code> file driving a gum TUI, TimeWarrior tracking, and a live Plasma 6 widget.</b>
+<b>An octopus-armed task board with a HAL 9000 eye — a gum TUI, TimeWarrior tracking, and a live Plasma 6 widget.</b>
 </p>
 
 <p align="center">
@@ -17,10 +17,10 @@
 <br/>
 
 REHOBOAM is a task-management and time-tracking suite with a single source of
-truth: an Obsidian **`KANBAN.md`** file. It wears two faces:
+truth: a SQLite database. It wears two faces:
 
-- a **gum-based terminal suite** (`rehoboam`, `kanban`, `timew`) for Kanban
-  management, TimeWarrior tracking, and daily-note syncing;
+- a **gum-based terminal suite** (`rehoboam`, `kanban`, `timew`) for board
+  management and TimeWarrior tracking;
 - a **Plasma 6 widget** — *HAL-Octopus* (`org.rehoboam.hal-octopus`) — that
   renders the open board as glowing nodes on a HAL 9000 eye, with click-to-track,
   a hover popup, and a full KDE configuration dialog.
@@ -32,15 +32,14 @@ truth: an Obsidian **`KANBAN.md`** file. It wears two faces:
 - 🐙 **HAL-Octopus widget** — live task eye: open tasks orbit as nodes on
   octopus arms, the active task glows with live elapsed time, and the pupil
   locks onto it. Hover for details, click to track.
-- 📋 **Obsidian Kanban sync** — groups and tasks live in SQLite and are
-  mirrored to `KANBAN.md` (YAML frontmatter and `%% kanban:settings` preserved).
-  Markdown is the source of truth; the DB and board stay in lockstep.
+- 📋 **SQLite board** — groups and tasks live in a local SQLite database,
+  managed from the TUI or the widget dialog.
 - ⏱️ **TimeWarrior integration** — start, stop, switch, and cancel tracking from
   the TUI or by clicking widget nodes. Every interval is tagged with the task's
   group and annotated with its description.
-- 📊 **Reports & daily notes** — today and week summaries plus per-task totals;
-  board state and tracked time are written into the current Obsidian daily note.
-- ⚙️ **Configuration dialog** — three KCM pages (Kanban, TimeWarrior, Widget)
+- 📊 **Reports** — today and week summaries plus per-task totals from the
+  imported `time_entries` table.
+- ⚙️ **Configuration dialog** — three KCM pages (Board, TimeWarrior, Widget)
   with atomic write-through to `~/.config/rehoboam/config`.
 
 ## Tech stack
@@ -51,26 +50,21 @@ truth: an Obsidian **`KANBAN.md`** file. It wears two faces:
 | TUI | bash 5+, [gum](https://github.com/charmbracelet/gum) |
 | Backend | Python 3.9+ (stdlib only), SQLite |
 | Tracking | [TimeWarrior](https://timewarrior.net/) 1.9+ |
-| Board | Obsidian (optional) — an editor for `KANBAN.md` |
 
 ## Architecture
 
 ```mermaid
 flowchart LR
-    KB["KANBAN.md (Obsidian)\nsource of truth"]
     DB[("SQLite\nrehoboam.db")]
     TUI["Gum TUI\nrehoboam · kanban · timew"]
     TW["TimeWarrior"]
-    DN["daily note (Obsidian)\nYYYY-MM-DD.md"]
     EXP["rehoboam_exporter.py\n1 s tick"]
     JSON["rehoboam_widget.json\natomic snapshot"]
     WID["HAL-Octopus widget\nQML / QtQuick 6"]
 
-    KB <-->|"md ⇄ db"| DB
     TUI <--> DB
     TUI <-->|"start · annotate"| TW
     TW -->|"import intervals"| DB
-    DB -->|"### To-Do"| DN
     DB --> EXP
     TW --> EXP
     EXP -->|"atomic write"| JSON
@@ -79,8 +73,7 @@ flowchart LR
 
 1. `~/.config/rehoboam/config` is loaded by `common.sh` and parsed by
    `rehoboam_db.py`.
-2. The TUI mutates the board through `rehoboam_db.py`; `KANBAN.md` is
-   regenerated on every change and daily notes are synced.
+2. The TUI mutates the board through `rehoboam_db.py`.
 3. Finished `timew` intervals are imported into `time_entries`, deduplicated by
    `UNIQUE(start, end)`.
 4. `rehoboam_exporter.py` polls the DB and TimeWarrior once per second and
@@ -97,7 +90,6 @@ KDE Plasma 6 (Qt 6 / QtQuick 6)   # widget only
 Python 3.9+                        # stdlib only, no pip installs
 TimeWarrior 1.9+                   # time tracking
 gum                                 # TUI only
-Obsidian vault                     # optional, paths are configurable
 ```
 
 ### 1. Clone
@@ -163,8 +155,6 @@ rewrites it atomically.
 
 | Key | Default | Used by |
 |---|---|---|
-| `KANBAN_FILE` | `~/Obsidian Vault/Computer Science/KANBAN.md` | `rehoboam_db.py`, `common.sh` |
-| `DAILY_NOTES_DIR` | `~/Obsidian Vault/Computer Science/999 Daily Notes` | `rehoboam_db.py`, `common.sh` |
 | `REHOBOAM_DB_PATH` | `~/.config/rehoboam/rehoboam.db` | `rehoboam_db.py` |
 | `HIDDEN_GROUPS` | *(unset)* | `rehoboam_exporter.py` |
 
@@ -180,7 +170,7 @@ rewrites it atomically.
 The entry point: shows the banner and hands off to the other menus.
 
 ```text
-🗂️  Kanban   ⏱️  TimeW   📅  Sync to Daily Note   ✖  Quit
+🗂️  Board   ⏱️  TimeW   ✖  Quit
 ```
 
 ### `kanban` — board management
@@ -192,7 +182,6 @@ The entry point: shows the banner and hands off to the other menus.
 | `🗃️ Add Task Group` | Create a board column |
 | `✏️ Edit / Delete Task` | Reword, move to another group, or delete |
 | `📁 Edit / Delete Group` | Rename, or delete (with all its tasks) |
-| `📅 Sync to Daily Note` | Write board + time into today's note |
 
 ### `timew` — time tracking & reports
 
@@ -252,9 +241,8 @@ shows the problem (plus an `OFFLINE` label when the snapshot isn't reachable).
 
 ### Configuration dialog (right-click → *Configure …*)
 
-- **Kanban** — add a task (group dropdown + title), tick groups to hide from the
-  eye, and set the board file / daily-notes directory. Edits write through to
-  `~/.config/rehoboam/config`.
+- **Board** — add a task (group dropdown + title) and tick groups to hide from
+  the eye. Edits write through to `~/.config/rehoboam/config`.
 - **TimeWarrior** — start tracking from live group/task dropdowns, stop /
   continue, and tune `maxtracking`, `verbose`, and `confirmation`.
 - **Widget** — `stateFile`, `pollInterval` (s), `hoverDelay` (ms).
@@ -273,7 +261,7 @@ rehoboam-config get-timew KEY           # current timew config value
 rehoboam-config timew-config KEY VALUE  # timew config KEY VALUE
 rehoboam-config timew-start GROUP TASK  # timew start + annotate @1
 rehoboam-config timew-switch GROUP TASK # stop current, then start + annotate
-rehoboam-config add-task GROUP TITLE    # add a task to the board (DB + md + note)
+rehoboam-config add-task GROUP TITLE    # add a task to the board (DB)
 ```
 
 ## TimeWarrior integration
@@ -311,18 +299,18 @@ rehoboam/
 │   └── contents/
 │       ├── config/
 │       │   ├── main.xml            # KConfigSkeleton: stateFile, pollInterval, hoverDelay
-│       │   └── config.qml          # dialog tabs: Kanban / TimeWarrior / Widget
+│       │   └── config.qml          # dialog tabs: Board / TimeWarrior / Widget
 │       └── ui/
 │           ├── main.qml            # HAL eye, task nodes, click-to-track, hover popup
 │           ├── configGeneral.qml   # state file, poll interval, hover delay
-│           ├── configKanban.qml    # add task, hidden groups, board paths
+│           ├── configKanban.qml    # add task, hidden groups
 │           └── configTimew.qml     # tracking actions + timew settings
-├── rehoboam_db.py                  # SQLite layer, Markdown sync, timew import, reports
+├── rehoboam_db.py                  # SQLite layer, timew import, reports
 ├── rehoboam_config.py              # CLI helper for the widget dialog
 ├── rehoboam_exporter.py            # widget-state daemon (atomic JSON, 1 s tick)
 ├── common.sh                       # shared config, banner font, DB/shell helpers
 ├── rehoboam.sh                     # TUI entry point
-├── kanban.sh                       # Kanban management (gum)
+├── kanban.sh                       # Board management (gum)
 ├── timew.sh                        # TimeWarrior front end + reports
 ├── install.sh                      # portable installer / uninstaller
 └── reload-widget.sh                # dev loop: lint → sync → reload widget
@@ -349,7 +337,6 @@ Gotchas:
 |---|---|
 | Widget shows nothing / no node updates | Is the exporter running? Check `~/.cache/rehoboam_widget.json` and `journalctl --user -b \| grep rehoboam` |
 | `sh: syntax error near unexpected token` | Unencoded shell-special characters — always use `encArg`/URL-encoded args |
-| Board file not found | Set `KANBAN_FILE` in `~/.config/rehoboam/config` or the widget's Kanban page |
 | `OFFLINE` label on the widget | Snapshot path wrong or daemon down — check `stateFile` under *Configure → Widget* |
 | `SimpleKCM ... cfg_*` dialog warnings | Cosmetic; declare the unused `cfg_*` properties on the page |
 
@@ -358,9 +345,8 @@ Gotchas:
 - Code is plain bash + Python stdlib + QML — no build step, no dependencies to
   vendor.
 - After touching widget QML, iterate with `./reload-widget.sh`.
-- Follow the existing patterns: helpers go through `rehoboam_db.py`, every
-  mutation re-exports `KANBAN.md`, and values crossing the QML/Python boundary
-  stay URL-encoded.
+- Follow the existing patterns: helpers go through `rehoboam_db.py`, and values
+  crossing the QML/Python boundary stay URL-encoded.
 
 ## License
 

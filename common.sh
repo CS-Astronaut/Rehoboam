@@ -13,8 +13,6 @@ export PYTHONPATH="$SCRIPT_DIR${PYTHONPATH:+:$PYTHONPATH}"
 # ---------------------------------------------------------------------------
 REHOBOAM_CONFIG="${REHOBOAM_CONFIG:-$HOME/.config/rehoboam/config}"
 [ -f "$REHOBOAM_CONFIG" ] && . "$REHOBOAM_CONFIG"
-KANBAN_FILE="${KANBAN_FILE:-$HOME/Obsidian Vault/Computer Science/KANBAN.md}"
-DAILY_NOTES_DIR="${DAILY_NOTES_DIR:-$HOME/Obsidian Vault/Computer Science/999 Daily Notes}"
 
 # Tokyo Night palette
 C_BG="#1a1b26"
@@ -28,7 +26,7 @@ C_FG="#c0caf5"
 C_DIM="#565f89"
 
 # ---------------------------------------------------------------------------
-# ASCII banner font (5x6 block glyphs) — covers REHOBOAM / KANBAN / TIMEW
+# ASCII banner font (5x6 block glyphs) — covers REHOBOAM / BOARD / TIMEW
 # ---------------------------------------------------------------------------
 declare -A FONT
 FONT[A]=" ███ 
@@ -161,14 +159,6 @@ show_dim()     { show_result "$C_DIM" "$1"; }
 # Python / SQLite Helpers
 # ---------------------------------------------------------------------------
 
-ensure_kanban_file() {
-  "$PYTHON_EXEC" -c "
-import rehoboam_db
-rehoboam_db.init_db()
-rehoboam_db.sync_kanban_file_to_db()
-"
-}
-
 startup_sync() {
   "$PYTHON_EXEC" -c "
 import rehoboam_db
@@ -258,17 +248,6 @@ sys.exit(0 if res else 1)
 " "$group_name"
 }
 
-sync_to_daily_note() {
-  "$PYTHON_EXEC" -c "
-import rehoboam_db
-rehoboam_db.sync_to_daily_note()
-"
-}
-
-sync_daily_notes() {
-  sync_to_daily_note "$@"
-}
-
 get_timew_status() {
   "$PYTHON_EXEC" -c "
 import rehoboam_db
@@ -316,5 +295,4 @@ add_time_manually() {
   local group_name="$1" text="$2" duration="$3"
   timew track "$duration" "$group_name" >/tmp/rehoboam_timew.log 2>&1 || return 1
   timew annotate @1 "$text" >>/tmp/rehoboam_timew.log 2>&1
-  sync_to_daily_note
 }

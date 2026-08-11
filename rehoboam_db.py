@@ -1,8 +1,8 @@
 """
-rehoboam_db.py — SQLite Database Layer & Obsidian Kanban Sync Engine for REHOBOAM.
+rehoboam_db.py — SQLite Database Layer for REHOBOAM.
 
 Manages SQLite database storage (~/.config/rehoboam/rehoboam.db) for tasks and groups,
-with bidirectional synchronization to Obsidian's KANBAN.md file and daily note update capabilities.
+and imports tracked TimeWarrior intervals into the time_entries table.
 """
 
 import os
@@ -37,14 +37,6 @@ def load_env_config() -> None:
 load_env_config()
 
 DB_PATH = os.getenv("REHOBOAM_DB_PATH", os.path.expanduser("~/.config/rehoboam/rehoboam.db"))
-KANBAN_FILE = os.getenv(
-    "KANBAN_FILE",
-    os.path.expanduser("~/Obsidian Vault/Computer Science/KANBAN.md")
-)
-DAILY_NOTES_DIR = os.getenv(
-    "DAILY_NOTES_DIR",
-    os.path.expanduser("~/Obsidian Vault/Computer Science/999 Daily Notes")
-)
 
 
 def get_db_connection() -> sqlite3.Connection:
@@ -111,148 +103,12 @@ def init_db():
 
 
 # ===========================================================================
-# Obsidian Markdown <-> SQLite Parsing & Syncing
-# ===========================================================================
-
-def parse_kanban_markdown(filepath: str) -> Tuple[List[str], List[Dict]]:
-    """
-    Parses Obsidian KANBAN.md while preserving header/YAML frontmatter and settings.
-    Returns (groups_in_order, list_of_task_dicts).
-    """
-    if not os.path.exists(filepath):
-        return [], []
-
-    with open(filepath, "r", encoding="utf-8") as f:
-        lines = f.readlines()
-
-    in_yaml = False
-    current_group = None
-    groups = []
-    tasks = []
-
-    for idx, line in enumerate(lines):
-        line_str = line.rstrip("\r\n")
-
-        if idx == 0 and line_str == "---":
-            in_yaml = True
-            continue
-        if in_yaml:
-            if line_str == "---":
-                in_yaml = False
-            continue
-
-        if line_str.startswith("%%"):
-            current_group = None
-            continue
-
-        if line_str.startswith("## "):
-            current_group = line_str[3:].strip()
-            if current_group not in groups:
-                groups.append(current_group)
-            continue
-
-        m = re.match(r"^- \[(.)\] (.*)$", line_str)
-        if m and current_group:
-            chk, desc = m.groups()
-            is_done = 1 if chk.lower() == "x" else 0
-            tasks.append({
-                "group_name": current_group,
-                "description": desc,
-                "is_done": is_done
-            })
-
-    return groups, tasks
-
-
-def export_db_to_kanban_markdown(filepath: str):
-    """
-    Generates updated KANBAN.md content from SQLite database while preserving
-    YAML frontmatter and %% kanban:settings footer if present in original file.
-    """
-    os.makedirs(os.path.dirname(filepath), exist_ok=True)
-
-    yaml_header = "---\n\nkanban-plugin: board\n\n---\n"
-    settings_footer = ""
-
-    if os.path.exists(filepath):
-        with open(filepath, "r", encoding="utf-8") as f:
-            content = f.read()
-
-        yaml_match = re.match(r"^(---\n.*?\n---\n)", content, re.DOTALL)
-        if yaml_match:
-            yaml_header = yaml_match.group(1)
-
-        settings_match = re.search(r"(%% kanban:settings.*)$", content, re.DOTALL)
-        if settings_match:
-            settings_footer = settings_match.group(1)
-
-    with get_db_connection() as conn:
-        groups = conn.execute("SELECT * FROM groups ORDER BY position ASC, id ASC").fetchall()
-        tasks_by_group = {}
-        for g in groups:
-            tasks = conn.execute(
-                "SELECT * FROM tasks WHERE group_id = ? ORDER BY position ASC, id ASC",
-                (g["id"],)
-            ).fetchall()
-            tasks_by_group[g["name"]] = tasks
-
-    out = [yaml_header.strip("\n")]
-
-    for g in groups:
-        g_name = g["name"]
-        out.append(f"\n## {g_name}\n")
-        g_tasks = tasks_by_group.get(g_name, [])
-        for t in g_tasks:
-            chk = "x" if t["is_done"] else " "
-            out.append(f"- [{chk}] {t['description']}")
-
-    out.append("")
-    if settings_footer:
-        out.append(settings_footer.strip("\n"))
-        out.append("")
-
-    new_content = "\n".join(out)
-    with open(filepath, "w", encoding="utf-8") as f:
-        f.write(new_content)
-
-
-def sync_kanban_file_to_db(filepath: str = KANBAN_FILE):
-    """
-    Imports/syncs state from KANBAN.md into SQLite DB.
-    If DB is empty, loads file. If both exist, keeps DB schema up to date.
-    """
-    init_db()
-    if not os.path.exists(filepath):
-        return
-
-    parsed_groups, parsed_tasks = parse_kanban_markdown(filepath)
-
-    with get_db_connection() as conn:
-        db_groups_cnt = conn.execute("SELECT COUNT(*) FROM groups").fetchone()[0]
-
-        if db_groups_cnt == 0:
-            for pos, gname in enumerate(parsed_groups):
-                cursor = conn.execute(
-                    "INSERT INTO groups (name, position) VALUES (?, ?)",
-                    (gname, pos)
-                )
-                gid = cursor.lastrowid
-                gtasks = [t for t in parsed_tasks if t["group_name"] == gname]
-                for tpos, t in enumerate(gtasks):
-                    conn.execute(
-                        "INSERT INTO tasks (group_id, description, is_done, position) VALUES (?, ?, ?, ?)",
-                        (gid, t["description"], t["is_done"], tpos)
-                    )
-            conn.commit()
-
-
-# ===========================================================================
-# CRUD Operations (Database + Sync Trigger)
+# CRUD Operations
 # ===========================================================================
 
 def get_groups() -> List[sqlite3.Row]:
     """Returns all non-'done' groups for menu displays, ordered by position."""
-    sync_kanban_file_to_db()
+    init_db()
     with get_db_connection() as conn:
         return conn.execute(
             "SELECT * FROM groups WHERE LOWER(name) != 'done' ORDER BY position ASC, id ASC"
@@ -288,7 +144,7 @@ def get_hidden_groups() -> set:
 
 def get_all_groups() -> List[sqlite3.Row]:
     """Returns all groups including 'done'."""
-    sync_kanban_file_to_db()
+    init_db()
     with get_db_connection() as conn:
         return conn.execute("SELECT * FROM groups ORDER BY position ASC, id ASC").fetchall()
 
@@ -297,7 +153,7 @@ def get_open_tasks() -> List[sqlite3.Row]:
     """
     Returns open (is_done=0) tasks from non-'done' groups with group names attached.
     """
-    sync_kanban_file_to_db()
+    init_db()
     with get_db_connection() as conn:
         return conn.execute("""
             SELECT t.*, g.name as group_name
@@ -312,7 +168,7 @@ def get_all_tasks() -> List[sqlite3.Row]:
     """
     Returns all tasks from non-'done' groups with group names attached.
     """
-    sync_kanban_file_to_db()
+    init_db()
     with get_db_connection() as conn:
         return conn.execute("""
             SELECT t.*, g.name as group_name
@@ -324,7 +180,7 @@ def get_all_tasks() -> List[sqlite3.Row]:
 
 
 def add_task(group_name: str, description: str):
-    """Adds a task to the specified group, saves in DB, exports KANBAN.md, syncs Daily Note."""
+    """Adds a task to the specified group in the DB."""
     with get_db_connection() as conn:
         g = conn.execute("SELECT id FROM groups WHERE name = ?", (group_name,)).fetchone()
         if not g:
@@ -344,14 +200,10 @@ def add_task(group_name: str, description: str):
         )
         conn.commit()
 
-    export_db_to_kanban_markdown(KANBAN_FILE)
-    sync_to_daily_note()
-
 
 def mark_task_done(task_id: int):
     """
-    Moves a task to the 'done' group in SQLite DB (creating 'done' group if needed),
-    exports KANBAN.md, and syncs Daily Note.
+    Moves a task to the 'done' group in SQLite DB (creating 'done' group if needed).
     """
     with get_db_connection() as conn:
         done_group = conn.execute(
@@ -369,9 +221,6 @@ def mark_task_done(task_id: int):
         )
         conn.commit()
 
-    export_db_to_kanban_markdown(KANBAN_FILE)
-    sync_to_daily_note()
-
 
 def add_group(group_name: str) -> bool:
     """Creates a new group in DB if not already existing."""
@@ -385,9 +234,6 @@ def add_group(group_name: str) -> bool:
 
         conn.execute("INSERT INTO groups (name, position) VALUES (?, ?)", (group_name, next_pos))
         conn.commit()
-
-    export_db_to_kanban_markdown(KANBAN_FILE)
-    sync_to_daily_note()
     return True
 
 
@@ -399,9 +245,6 @@ def edit_task_text(task_id: int, new_text: str):
             (new_text, task_id)
         )
         conn.commit()
-
-    export_db_to_kanban_markdown(KANBAN_FILE)
-    sync_to_daily_note()
 
 
 def move_task(task_id: int, new_group_name: str):
@@ -420,18 +263,12 @@ def move_task(task_id: int, new_group_name: str):
         )
         conn.commit()
 
-    export_db_to_kanban_markdown(KANBAN_FILE)
-    sync_to_daily_note()
-
 
 def delete_task(task_id: int):
     """Deletes task from DB."""
     with get_db_connection() as conn:
         conn.execute("DELETE FROM tasks WHERE id = ?", (task_id,))
         conn.commit()
-
-    export_db_to_kanban_markdown(KANBAN_FILE)
-    sync_to_daily_note()
 
 
 def rename_group(group_id: int, new_name: str):
@@ -440,9 +277,6 @@ def rename_group(group_id: int, new_name: str):
         conn.execute("UPDATE groups SET name = ? WHERE id = ?", (new_name, group_id))
         conn.commit()
 
-    export_db_to_kanban_markdown(KANBAN_FILE)
-    sync_to_daily_note()
-
 
 def delete_group(group_id: int):
     """Deletes group and its tasks from DB."""
@@ -450,12 +284,9 @@ def delete_group(group_id: int):
         conn.execute("DELETE FROM groups WHERE id = ?", (group_id,))
         conn.commit()
 
-    export_db_to_kanban_markdown(KANBAN_FILE)
-    sync_to_daily_note()
-
 
 # ===========================================================================
-# Daily Note Syncing (TimeWarrior + Database Tasks)
+# TimeWarrior Import & Reports
 # ===========================================================================
 
 def _parse_timew_ts(ts_str: str) -> Optional[str]:
@@ -707,84 +538,13 @@ def get_timew_durations_today() -> Dict[int, int]:
     return get_durations_for_date(today)
 
 
-def sync_to_daily_note():
-    """
-    Reads tasks from SQLite DB, checks TimeWarrior annotations, and writes the
-    ### To-Do section into current day's daily note in Obsidian.
-    """
-    import_timew_entries()
-    today = datetime.now().strftime("%Y-%m-%d")
-    daily_note_path = os.path.join(DAILY_NOTES_DIR, f"{today}.md")
-    os.makedirs(DAILY_NOTES_DIR, exist_ok=True)
-
-    tw_durations = get_durations_for_date(today)
-
-    with get_db_connection() as conn:
-        groups = conn.execute(
-            "SELECT * FROM groups WHERE LOWER(name) NOT IN ('done', 'future') "
-            "ORDER BY position ASC, id ASC"
-        ).fetchall()
-        tasks_by_group = {}
-        for g in groups:
-            ts = conn.execute(
-                "SELECT * FROM tasks WHERE group_id = ? ORDER BY position ASC, id ASC",
-                (g["id"],)
-            ).fetchall()
-            if ts:
-                tasks_by_group[g["name"]] = ts
-
-    todo_lines = ["### To-Do"]
-    for gname, ts in tasks_by_group.items():
-        todo_lines.append(f"- {gname}")
-        for t in ts:
-            chk = "x" if t["is_done"] else " "
-            desc = t["description"]
-
-            best_dur = tw_durations.get(t["id"], 0)
-
-            if best_dur > 0:
-                todo_lines.append(f"\t- [{chk}] {desc} {{{format_duration(best_dur)}}}")
-            else:
-                todo_lines.append(f"\t- [{chk}] {desc}")
-
-    todo_text = "\n".join(todo_lines) + "\n"
-
-    dn_content = ""
-    if os.path.exists(daily_note_path):
-        with open(daily_note_path, "r", encoding="utf-8") as f:
-            dn_content = f.read()
-
-    if not dn_content.strip():
-        dn_content = (
-            f"---\naliases: []\ntags:\n  - daily\ndate: {today}\nfocus: \"\"\n"
-            f"productivity: 0\n---\n\n{todo_text}\n### Note 📝\n- [ ] \n\n---\n"
-            f"### 🧠 Journal\n- Thoughts:\n"
-        )
-    else:
-        if re.search(r"###\s+To-?[dD]o", dn_content):
-            pattern = r"(###\s+To-?[dD]o.*?\n)(?=\n###|\Z)"
-            dn_content = re.sub(pattern, todo_text, dn_content, flags=re.DOTALL)
-        else:
-            if "### Note" in dn_content:
-                dn_content = dn_content.replace("### Note", f"{todo_text}\n### Note")
-            elif "### 🧠 Journal" in dn_content:
-                dn_content = dn_content.replace("### 🧠 Journal", f"{todo_text}\n### 🧠 Journal")
-            else:
-                dn_content += f"\n\n{todo_text}"
-
-    with open(daily_note_path, "w", encoding="utf-8") as f:
-        f.write(dn_content)
-
-
 def startup_sync():
-    """One-shot sync at startup: KANBAN.md → DB, timew → time_entries, DB → daily note."""
+    """One-shot sync at startup: init DB and import timew → time_entries."""
     init_db()
-    sync_kanban_file_to_db()
     import_timew_entries()
-    sync_to_daily_note()
 
 
 if __name__ == "__main__":
     init_db()
-    sync_kanban_file_to_db()
-    print("Database initialized and synced with KANBAN.md.")
+    import_timew_entries()
+    print("Database initialized.")

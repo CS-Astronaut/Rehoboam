@@ -3,8 +3,8 @@
 #
 # Copies the project into a stable install prefix, patches the machine-specific
 # paths baked into the widget QML, installs the plasmoid, wires the exporter
-# daemon up (systemd user unit or XDG autostart), creates the config file,
-# initializes the SQLite DB, and links the commands into ~/.local/bin.
+# daemon up (systemd user unit or XDG autostart), initializes the SQLite DB,
+# and links the commands into ~/.local/bin.
 #
 # Usage:
 #   ./install.sh                     install with defaults
@@ -21,7 +21,6 @@ PREFIX="${PREFIX:-$HOME/.local/share/rehoboam}"
 PLASMOID_ID="org.rehoboam.hal-octopus"
 PLASMOID_DIR="$HOME/.local/share/plasma/plasmoids/$PLASMOID_ID"
 CONFIG_DIR="$HOME/.config/rehoboam"
-CONFIG_FILE="$CONFIG_DIR/config"
 BIN_DIR="$HOME/.local/bin"
 CACHE_DIR="$HOME/.cache"
 
@@ -78,7 +77,7 @@ find_old_paths() {
 }
 
 copy_project() {
-    echo "[2/5] Copying project to $PREFIX"
+    echo "[2/4] Copying project to $PREFIX"
     rm -rf "$PREFIX"
     mkdir -p "$PREFIX"
     tar -C "$SCRIPT_DIR" -cf - \
@@ -89,7 +88,7 @@ copy_project() {
 }
 
 patch_widget() {
-    echo "[3/5] Patching widget paths and installing plasmoid"
+    echo "[3/4] Patching widget paths and installing plasmoid"
     local -a targets=(
         "$PREFIX/hal-octopus/contents/ui/main.qml"
         "$PREFIX/hal-octopus/contents/ui/configGeneral.qml"
@@ -112,19 +111,6 @@ patch_widget() {
     echo "  [INFO] plasmoid installed to $PLASMOID_DIR"
 }
 
-write_config() {
-    if [ ! -f "$CONFIG_FILE" ]; then
-        echo "[4/5] Creating $CONFIG_FILE"
-        mkdir -p "$CONFIG_DIR"
-        {
-            echo "KANBAN_FILE=$HOME/Obsidian Vault/Computer Science/KANBAN.md"
-            echo "DAILY_NOTES_DIR=$HOME/Obsidian Vault/Computer Science/999 Daily Notes"
-        } > "$CONFIG_FILE"
-    else
-        echo "[4/5] Keeping existing $CONFIG_FILE"
-    fi
-}
-
 init_db() {
     echo "  [INFO] initializing database"
     python3 -c "
@@ -132,12 +118,12 @@ import sys
 sys.path.insert(0, '$PREFIX')
 import rehoboam_db
 rehoboam_db.startup_sync()
-" >/dev/null 2>&1 || echo "  [WARN] DB init/sync failed (board file missing is fine)"
+" >/dev/null 2>&1 || echo "  [WARN] DB init failed (is timew installed?)"
 }
 
 make_links() {
     [ "$DO_LINKS" -eq 0 ] && return 0
-    echo "[5/5] Linking commands into $BIN_DIR"
+    echo "[4/4] Linking commands into $BIN_DIR"
     mkdir -p "$BIN_DIR"
     local -a links=(rehoboam rehoboam.sh kanban kanban.sh timew timew.sh)
     for name in "${links[@]}"; do
@@ -245,12 +231,11 @@ main() {
         uninstall
         exit 0
     fi
-    echo "[1/5] Checking dependencies"
+    echo "[1/4] Checking dependencies"
     check_deps || { echo "Install aborted — install missing packages first." >&2; exit 1; }
     find_old_paths
     copy_project
     patch_widget
-    write_config
     init_db
     make_links
     setup_autostart

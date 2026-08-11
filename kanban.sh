@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# kanban.sh — gum-powered front end for SQLite backend & Obsidian KANBAN.md sync
+# kanban.sh — gum-powered front end for the SQLite board backend
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=common.sh
@@ -52,7 +52,7 @@ show_tasks() {
     done
 
     mark_task_done "$target_id"
-    show_success "Marked done & synced to Daily Note!"
+    show_success "Marked done!"
   done
 }
 
@@ -75,7 +75,7 @@ add_task() {
   [ -z "$text" ] && return
 
   insert_task "$group" "$text"
-  show_success "Task added to ${group} & synced to Daily Note"
+  show_success "Task added to ${group}"
 }
 
 # ---------------------------------------------------------------------------
@@ -91,7 +91,7 @@ add_group() {
     return
   fi
 
-  show_success "Group '${name}' created & synced to Daily Note"
+  show_success "Group '${name}' created"
 }
 
 # ---------------------------------------------------------------------------
@@ -138,7 +138,7 @@ edit_delete_task() {
     newtext=$(gum input --value "$current_text" --header "Edit task text")
     [ -z "$newtext" ] && return
     edit_task_text "$target_id" "$newtext"
-    show_success "Task updated & synced to Daily Note"
+    show_success "Task updated"
     ;;
   "📦  Change group")
     mapfile -t groups < <(get_groups | cut -f2)
@@ -149,12 +149,12 @@ edit_delete_task() {
     group=$(printf '%s\n' "${groups[@]}" | gum choose --cursor "▶ " --header "Move task to which group?")
     [ -z "$group" ] && return
     move_task "$target_id" "$group"
-    show_success "Task moved to ${group} & synced to Daily Note"
+    show_success "Task moved to ${group}"
     ;;
   "🗑️  Delete")
     if gum confirm "Delete this task?"; then
       delete_task "$target_id"
-      show_error "Task deleted & synced to Daily Note"
+      show_error "Task deleted"
     fi
     ;;
   *) return ;;
@@ -200,12 +200,12 @@ edit_delete_group() {
     newname=$(gum input --value "$sel" --header "New group name")
     [ -z "$newname" ] && return
     rename_group "$target_id" "$newname"
-    show_success "Group renamed & synced to Daily Note"
+    show_success "Group renamed"
     ;;
   "🗑️  Delete (with its tasks)")
     if gum confirm "Delete '${sel}' and ALL its tasks? This can't be undone."; then
       delete_group "$target_id"
-      show_error "Group deleted & synced to Daily Note"
+      show_error "Group deleted"
     fi
     ;;
   *) return ;;
@@ -223,9 +223,8 @@ while true; do
     "🗃️  Add Task Group" \
     "✏️  Edit / Delete Task" \
     "📁  Edit / Delete Group" \
-    "📅  Sync to Daily Note" \
     "⬅  Return to Main Menu" \
-    --header "KANBAN — choose an action")
+    --header "BOARD — choose an action")
 
   case "$choice" in
   "📋  Show Tasks") show_tasks ;;
@@ -233,7 +232,6 @@ while true; do
   "🗃️  Add Task Group") add_group ;;
   "✏️  Edit / Delete Task") edit_delete_task ;;
   "📁  Edit / Delete Group") edit_delete_group ;;
-  "📅  Sync to Daily Note") sync_to_daily_note; show_success "Daily note updated!" ;;
   "⬅  Return to Main Menu" | "") exit 0 ;;
   esac
 done

@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
 # timew.sh — gum front end for the `timew` CLI, with DB-backed reports.
-# Tasks/groups shown in "Start" are read live from KANBAN.md; nothing here
-# writes to that file (only Kanban does that) — this script only calls timew
-# and syncs tracked time into the rehoboam DB / daily note.
+# Tasks/groups shown in "Start" are read live from the rehoboam board; this
+# script only calls timew and syncs tracked time into the rehoboam DB.
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=common.sh
@@ -20,7 +19,7 @@ pick_open_task() {
   mapfile -t entries < <(get_task_entries | awk -F'\t' '$3 !~ /\[[xX]\]/')
 
   if [ "${#entries[@]}" -eq 0 ]; then
-    show_warning "No open tasks in KANBAN.md"
+    show_warning "No open tasks on the board"
     return 1
   fi
 
@@ -84,7 +83,6 @@ timew_stop() {
   local cur
   cur=$(get_timew_current)
   out=$(timew stop 2>&1)
-  sync_to_daily_note
   show_error "■ Stopped: ${cur}"
 }
 
@@ -131,7 +129,6 @@ cancel_current() {
   cur=$(get_timew_current)
   if gum confirm "Cancel this interval? ${cur}"; then
     out=$(timew cancel 2>&1)
-    sync_to_daily_note
     show_error "🚫 Cancelled: ${cur}"
   else
     show_dim "Kept tracking."

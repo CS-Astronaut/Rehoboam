@@ -2,7 +2,6 @@
 # rehoboam.sh — main dashboard / entry point.
 # Run this one. It shows the REHOBOAM banner and hands off to kanban.sh
 # or timew.sh, both of which live next to this script.
-
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=common.sh
 source "$SCRIPT_DIR/common.sh"
@@ -18,16 +17,14 @@ startup_sync
 while true; do
   print_header "REHOBOAM"
   choice=$(gum choose --cursor "▶ " \
-    "🗂️  Kanban" \
+    "🗂️  Board" \
     "⏱️  TimeW" \
-    "📅  Sync to Daily Note" \
     "✖  Quit" \
     --header "REHOBOAM — choose an action")
 
   case "$choice" in
-  "🗂️  Kanban") bash "$SCRIPT_DIR/kanban.sh" ;;
+  "🗂️  Board") bash "$SCRIPT_DIR/kanban.sh" ;;
   "⏱️  TimeW") bash "$SCRIPT_DIR/timew.sh" ;;
-  "📅  Sync to Daily Note") sync_to_daily_note; show_success "Daily note updated!" ;;
   "✖  Quit" | "") clear; exit 0 ;;
   esac
 done

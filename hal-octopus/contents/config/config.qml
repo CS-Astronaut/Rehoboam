@@ -2,7 +2,7 @@ import org.kde.plasma.configuration
 
 ConfigModel {
     ConfigCategory {
-        name: i18n("Kanban")
+        name: i18n("Board")
         icon: "folder-sync"
         source: "configKanban.qml"
     }
