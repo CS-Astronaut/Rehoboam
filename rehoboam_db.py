@@ -5,6 +5,7 @@ Manages SQLite database storage (~/.config/rehoboam/rehoboam.db) for tasks and g
 and imports tracked TimeWarrior intervals into the time_entries table.
 """
 
+import json
 import os
 import re
 import sqlite3
@@ -147,15 +148,27 @@ def get_groups() -> List[sqlite3.Row]:
         ).fetchall()
 
 
+_HIDDEN_CACHE = None  # (config mtime, frozenset) — avoids re-parsing on every exporter tick
+
+
 def get_hidden_groups() -> set:
     """Returns the set of group names hidden from the octopus widget display.
 
     Reads HIDDEN_GROUPS (comma-separated, shell-quoted values written by
-    rehoboam_config.py) from ~/.config/rehoboam/config on every call, so the
-    exporter picks up dialog changes without a restart. Matching is
-    case-insensitive; a missing key or file yields an empty set.
+    rehoboam_config.py) from ~/.config/rehoboam/config, cached by file mtime so
+    the exporter picks up dialog changes (config rewrites bump the mtime).
+    Matching is case-insensitive; a missing key or file yields an empty set.
     """
+    global _HIDDEN_CACHE
     path = os.path.expanduser("~/.config/rehoboam/config")
+    try:
+        mtime = os.path.getmtime(path)
+    except OSError:
+        _HIDDEN_CACHE = None
+        return set()
+    if _HIDDEN_CACHE is not None and _HIDDEN_CACHE[0] == mtime:
+        return set(_HIDDEN_CACHE[1])
+    hidden = set()
     try:
         with open(path, encoding="utf-8") as f:
             for line in f:
@@ -168,10 +181,12 @@ def get_hidden_groups() -> set:
                 value = value.strip()
                 if len(value) >= 2 and value[0] in "'\"" and value[-1] == value[0]:
                     value = value[1:-1]
-                return {g.strip().lower() for g in value.split(",") if g.strip()}
+                hidden = {g.strip().lower() for g in value.split(",") if g.strip()}
+                break
     except OSError:
-        pass
-    return set()
+        hidden = set()
+    _HIDDEN_CACHE = (mtime, frozenset(hidden))
+    return hidden
 
 
 def get_all_groups() -> List[sqlite3.Row]:
@@ -357,7 +372,6 @@ def import_timew_entries(range_arg: str = ":day") -> int:
             ["timew", "export", range_arg],
             capture_output=True, text=True, check=True
         )
-        import json
         data = json.loads(res.stdout) if res.stdout.strip() else []
     except Exception:
         return 0
@@ -509,7 +523,6 @@ def get_timew_current_description() -> str:
             ["timew", "export", ":day"],
             capture_output=True, text=True, check=True
         )
-        import json
         data = json.loads(res.stdout) if res.stdout.strip() else []
     except Exception:
         return ""
@@ -526,7 +539,6 @@ def get_timew_last_description() -> str:
             ["timew", "export"],
             capture_output=True, text=True, check=True
         )
-        import json
         data = json.loads(res.stdout) if res.stdout.strip() else []
     except Exception:
         return ""
@@ -547,7 +559,6 @@ def get_timew_status() -> str:
             ["timew", "export", ":day"],
             capture_output=True, text=True, check=True
         )
-        import json
         data = json.loads(res.stdout) if res.stdout.strip() else []
     except Exception:
         return ""

@@ -160,6 +160,7 @@ Type=simple
 WorkingDirectory=$PREFIX
 ExecStart=$(command -v python3) $PREFIX/rehoboam_exporter.py
 Restart=on-failure
+RestartSec=2
 
 [Install]
 WantedBy=default.target
@@ -208,14 +209,31 @@ restart_plasmashell() {
 
 uninstall() {
     echo "Uninstalling REHOBOAM..."
+    local unit="$HOME/.config/systemd/user/rehoboam-exporter.service"
+    local desk="$HOME/.config/autostart/rehoboam-exporter.desktop"
+    # Locate the real install prefix from the unit file, the autostart entry,
+    # or the ~/.local/bin links, so --uninstall works even when the installer
+    # was run with a different --prefix than the default.
+    local prefix=""
+    [ -f "$unit" ] && prefix="$(sed -n 's|^ExecStart=.* \(.*\)/rehoboam_exporter\.py[[:space:]]*$|\1|p' "$unit" | head -1)"
+    [ -z "$prefix" ] && [ -f "$desk" ] && prefix="$(sed -n 's|^Exec=.* \(.*\)/rehoboam_exporter\.py[[:space:]]*$|\1|p' "$desk" | head -1)"
+    if [ -z "$prefix" ] && [ -L "$BIN_DIR/rehoboam-exporter" ]; then
+        prefix="$(readlink -f "$BIN_DIR/rehoboam-exporter")"
+        prefix="${prefix%/*}"
+    fi
+    if [ -n "$prefix" ] && [ "$prefix" != "$PREFIX" ]; then
+        echo "  [INFO] detected installed prefix: $prefix"
+    fi
+    local installed="${prefix:-$PREFIX}"
+    [ "$installed" = "/" ] && installed="$PREFIX"
     systemctl --user disable --now rehoboam-exporter.service >/dev/null 2>&1 || true
-    rm -f "$HOME/.config/systemd/user/rehoboam-exporter.service"
-    rm -f "$HOME/.config/autostart/rehoboam-exporter.desktop"
+    rm -f "$unit"
+    rm -f "$desk"
     rm -f "$BIN_DIR/rehoboam" "$BIN_DIR/rehoboam.sh" "$BIN_DIR/kanban" "$BIN_DIR/kanban.sh" \
           "$BIN_DIR/timew" "$BIN_DIR/timew.sh" "$BIN_DIR/rehoboam-config" \
           "$BIN_DIR/rehoboam-exporter" "$BIN_DIR/rehoboam-reload"
     rm -rf "$PLASMOID_DIR"
-    rm -rf "$PREFIX"
+    rm -rf "$installed"
     if [ "$PURGE" -eq 1 ]; then
         rm -rf "$CONFIG_DIR" "$CACHE_DIR/rehoboam_widget.json" \
                "$CACHE_DIR/rehoboam_widget.lock" "$CACHE_DIR/rehoboam_widget.json.tmp"
