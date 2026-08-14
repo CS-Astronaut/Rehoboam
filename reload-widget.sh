@@ -17,6 +17,7 @@ fi
 
 echo "[2/4] Syncing widget to $TARGET"
 rsync -a --delete "$WIDGET/" "$TARGET/"
+ln -sf "$HOME/.local/share/rehoboam/rehoboam_config.py" "$TARGET/rehoboam_config.py"
 echo "      synced"
 
 echo "[3/4] Cleaning QML caches"

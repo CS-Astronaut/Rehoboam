@@ -7,7 +7,7 @@ import org.kde.plasma.plasma5support as Plasma5Support
 KCM.SimpleKCM {
     id: timewPage
 
-    readonly property string helper: "/home/rigel/.local/share/rehoboam/rehoboam_config.py"
+    readonly property string helper: Qt.resolvedUrl("../../rehoboam_config.py").toString().replace(/^file:\/\/(localhost)?/, "")
     property var boardTasks: ({})
 
     property string cfg_stateFile: ""
@@ -18,6 +18,12 @@ KCM.SimpleKCM {
     property int cfg_hoverDelayDefault: 2000
     property string cfg_accentColor: ""
     property string cfg_accentColorDefault: ""
+
+    Timer {
+        id: maxtrackingDebounce
+        interval: 600
+        onTriggered: run("timew config maxtracking " + maxtracking.value)
+    }
 
     function encArg(s) {
         return encodeURIComponent(s).replace(/[!'()*~]/g, c => "%" + c.charCodeAt(0).toString(16).toUpperCase());
@@ -178,7 +184,7 @@ KCM.SimpleKCM {
             stepSize: 15
             editable: true
             QtLayouts.Layout.fillWidth: true
-            onValueModified: run("timew config maxtracking " + value)
+            onValueModified: maxtrackingDebounce.restart()
         }
 
         QtControls.Label {

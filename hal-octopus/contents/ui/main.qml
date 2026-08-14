@@ -36,9 +36,9 @@ PlasmoidItem {
             : Kirigami.Theme.highlightColor;
     }
 
-    readonly property string helper: "/home/rigel/.local/share/rehoboam/rehoboam_config.py"
+    readonly property string helper: Qt.resolvedUrl("../../rehoboam_config.py").toString().replace(/^file:\/\/(localhost)?/, "")
     property string stateFile: plasmoid.configuration.stateFile
-    property string stateCmd: "python3 " + root.helper + " cat " + encArg(stateFile)
+    property string stateCmd: "cat " + JSON.stringify(plasmoid.configuration.stateFile)
 
     function encArg(s) {
         return encodeURIComponent(s).replace(/[!'()*~]/g, c => "%" + c.charCodeAt(0).toString(16).toUpperCase());

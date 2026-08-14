@@ -108,6 +108,7 @@ patch_widget() {
     rm -rf "$PLASMOID_DIR"
     mkdir -p "$(dirname "$PLASMOID_DIR")"
     cp -a "$PREFIX/hal-octopus" "$PLASMOID_DIR"
+    ln -sf "$PREFIX/rehoboam_config.py" "$PLASMOID_DIR/rehoboam_config.py"
     echo "  [INFO] plasmoid installed to $PLASMOID_DIR"
 }
 

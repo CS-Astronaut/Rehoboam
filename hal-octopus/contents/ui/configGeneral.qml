@@ -44,7 +44,7 @@ KCM.SimpleKCM {
         }
         QtControls.TextField {
             id: stateFile
-            placeholderText: "/home/rigel/.cache/rehoboam_widget.json"
+            placeholderText: i18n("Path to the widget state JSON file")
             QtLayouts.Layout.fillWidth: true
         }
 
