@@ -675,17 +675,17 @@ PlasmoidItem {
                     const body = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
                     if (isOnline) {
                         if (isLocked) {
-                            // Active task: Classic HAL Hot Core
-                            body.addColorStop(0.0, "#ffeb3b");  // Hot yellow core
-                            body.addColorStop(0.15, "#ff2244"); // Intense neon red
-                            body.addColorStop(0.6, "#880011");  // Deep dark red
-                            body.addColorStop(1.0, "#0a0000");  // Almost black at the edge
+                            // Active task: Pure hot red core
+                            body.addColorStop(0.0, "#ff3b30");
+                            body.addColorStop(0.25, "#e01b1b");
+                            body.addColorStop(0.7, "#7a0404");
+                            body.addColorStop(1.0, "#0e0000");
                         } else {
-                            // Idle: Dimmer orange/amber version
-                            body.addColorStop(0.0, "#ffb454");
-                            body.addColorStop(0.2, "#e07a28");
-                            body.addColorStop(0.7, "#4d2605");
-                            body.addColorStop(1.0, "#0a0000");
+                            // Idle: Dark glassy lens
+                            body.addColorStop(0.0, "#2c3550");
+                            body.addColorStop(0.45, "#161b2c");
+                            body.addColorStop(0.8, "#0a0c14");
+                            body.addColorStop(1.0, "#05060a");
                         }
                     } else {
                         // Offline state
@@ -698,143 +698,8 @@ PlasmoidItem {
                     ctx.beginPath();
                     ctx.arc(cx, cy, r, 0, Math.PI * 2); // Using arc instead of ellipse
                     ctx.fill();
-
-                    // HAL Glass Lens Reflection (Cool blue/white tint at the top)
-                    ctx.strokeStyle = "rgba(150, 200, 255, 0.25)"; 
-                    ctx.lineWidth = 3;
-                    ctx.lineCap = "round";
-                    ctx.beginPath();
-                    ctx.arc(cx, cy, r * 0.75, Math.PI * 1.1, Math.PI * 1.8);
-                    ctx.stroke();
-
-                    // Inner bright highlight
-                    ctx.strokeStyle = "rgba(255, 255, 255, 0.4)";
-                    ctx.lineWidth = 1;
-                    ctx.beginPath();
-                    ctx.arc(cx, cy, r * 0.65, Math.PI * 1.2, Math.PI * 1.7);
-                    ctx.stroke();
                 }
             }
-
-        Item {
-            id: reticle
-            anchors.centerIn: parent
-            width: parent.width - 18
-            height: parent.height - 18
-            Shape {
-                anchors.fill: parent
-                antialiasing: true
-                ShapePath {
-                    fillColor: "transparent"
-                    strokeColor: root.online ? Qt.rgba(root.cAccent.r, root.cAccent.g, root.cAccent.b, 0.22) : "#203b4252"
-                    strokeWidth: 1.5
-                    dashPattern: [2.5, 6.5]
-                    startX: reticle.width / 2
-                    startY: 0
-                    PathArc {
-                        x: reticle.width / 2 - 0.01
-                        y: 0
-                        radiusX: reticle.width / 2
-                        radiusY: reticle.width / 2
-                        direction: PathArc.Counterclockwise
-                    }
-                }
-            }
-            Shape {
-                anchors.fill: parent
-                antialiasing: true
-                ShapePath {
-                    fillColor: "transparent"
-                    strokeColor: root.online ? Qt.rgba(root.cAccent.r, root.cAccent.g, root.cAccent.b, 0.6) : "#33414868"
-                    strokeWidth: 1
-                    capStyle: ShapePath.FlatCap
-                    startX: reticle.width / 2
-                    startY: -2
-                    PathLine { x: reticle.width / 2; y: 6 }
-                }
-                ShapePath {
-                    fillColor: "transparent"
-                    strokeColor: root.online ? Qt.rgba(root.cAccent.r, root.cAccent.g, root.cAccent.b, 0.6) : "#33414868"
-                    strokeWidth: 1
-                    capStyle: ShapePath.FlatCap
-                    startX: reticle.width / 2
-                    startY: reticle.height - 6
-                    PathLine { x: reticle.width / 2; y: reticle.height + 2 }
-                }
-                ShapePath {
-                    fillColor: "transparent"
-                    strokeColor: root.online ? Qt.rgba(root.cAccent.r, root.cAccent.g, root.cAccent.b, 0.6) : "#33414868"
-                    strokeWidth: 1
-                    capStyle: ShapePath.FlatCap
-                    startX: -2
-                    startY: reticle.height / 2
-                    PathLine { x: 6; y: reticle.height / 2 }
-                }
-                ShapePath {
-                    fillColor: "transparent"
-                    strokeColor: root.online ? Qt.rgba(root.cAccent.r, root.cAccent.g, root.cAccent.b, 0.6) : "#33414868"
-                    strokeWidth: 1
-                    capStyle: ShapePath.FlatCap
-                    startX: reticle.width - 6
-                    startY: reticle.height / 2
-                    PathLine { x: reticle.width + 2; y: reticle.height / 2 }
-                }
-            }
-            Shape {
-                id: diagShape
-                anchors.fill: parent
-                antialiasing: true
-                property real q: reticle.width * 0.3536
-                ShapePath {
-                    fillColor: "transparent"
-                    strokeColor: root.online ? Qt.rgba(root.cAccent.r, root.cAccent.g, root.cAccent.b, 0.15) : "#1c414868"
-                    strokeWidth: 1
-                    capStyle: ShapePath.FlatCap
-                    startX: reticle.width / 2 - diagShape.q - 2.5
-                    startY: reticle.height / 2 - diagShape.q - 2.5
-                    PathLine {
-                        x: reticle.width / 2 - diagShape.q + 0.5
-                        y: reticle.height / 2 - diagShape.q + 0.5
-                    }
-                }
-                ShapePath {
-                    fillColor: "transparent"
-                    strokeColor: root.online ? Qt.rgba(root.cAccent.r, root.cAccent.g, root.cAccent.b, 0.15) : "#1c414868"
-                    strokeWidth: 1
-                    capStyle: ShapePath.FlatCap
-                    startX: reticle.width / 2 + diagShape.q - 0.5
-                    startY: reticle.height / 2 - diagShape.q - 2.5
-                    PathLine {
-                        x: reticle.width / 2 + diagShape.q + 2.5
-                        y: reticle.height / 2 - diagShape.q + 0.5
-                    }
-                }
-                ShapePath {
-                    fillColor: "transparent"
-                    strokeColor: root.online ? Qt.rgba(root.cAccent.r, root.cAccent.g, root.cAccent.b, 0.15) : "#1c414868"
-                    strokeWidth: 1
-                    capStyle: ShapePath.FlatCap
-                    startX: reticle.width / 2 - diagShape.q - 2.5
-                    startY: reticle.height / 2 + diagShape.q - 0.5
-                    PathLine {
-                        x: reticle.width / 2 - diagShape.q + 0.5
-                        y: reticle.height / 2 + diagShape.q + 2.5
-                    }
-                }
-                ShapePath {
-                    fillColor: "transparent"
-                    strokeColor: root.online ? Qt.rgba(root.cAccent.r, root.cAccent.g, root.cAccent.b, 0.15) : "#1c414868"
-                    strokeWidth: 1
-                    capStyle: ShapePath.FlatCap
-                    startX: reticle.width / 2 + diagShape.q - 0.5
-                    startY: reticle.height / 2 + diagShape.q - 0.5
-                    PathLine {
-                        x: reticle.width / 2 + diagShape.q + 2.5
-                        y: reticle.height / 2 + diagShape.q + 2.5
-                    }
-                }
-            }
-        }
 
         Item {
             id: pupilRig
@@ -889,7 +754,7 @@ PlasmoidItem {
                     const cy = h / 2;
                     const R = Math.min(cx, cy) - 3;
                     const sheen = ctx.createLinearGradient(0, 0, 0, h * 0.5);
-                    sheen.addColorStop(0, "rgba(255,255,255,0.14)");
+                    sheen.addColorStop(0, "rgba(255,255,255,0.18)");
                     sheen.addColorStop(1, "rgba(255,255,255,0)");
                     ctx.strokeStyle = sheen;
                     ctx.lineWidth = R * 0.28;
@@ -930,7 +795,7 @@ PlasmoidItem {
                     const h = height;
                     ctx.clearRect(0, 0, w, h);
                     const g = ctx.createRadialGradient(w / 2, h / 2, 0, w / 2, h / 2, w / 2);
-                    g.addColorStop(0, "rgba(255,255,255,0.38)");
+                    g.addColorStop(0, "rgba(255,255,255,0.42)");
                     g.addColorStop(0.4, "rgba(255,255,255,0.1)");
                     g.addColorStop(1, "rgba(255,255,255,0)");
                     ctx.fillStyle = g;
