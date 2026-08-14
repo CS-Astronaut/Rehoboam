@@ -325,8 +325,8 @@ PlasmoidItem {
         const len = Math.hypot(nodeX, nodeY);
         const px = -Math.sin(angle);
         const py = Math.cos(angle);
-        const sx = Math.cos(angle) * (root.eyeR + 3);
-        const sy = Math.sin(angle) * (root.eyeR + 3);
+        const sx = Math.cos(angle) * (root.eyeR - 8);
+        const sy = Math.sin(angle) * (root.eyeR - 8);
         const endRad = root.nodeH / 2 + 4;
         const tx = nodeX - Math.cos(angle) * endRad;
         const ty = nodeY - Math.sin(angle) * endRad;
