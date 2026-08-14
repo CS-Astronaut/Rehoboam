@@ -42,16 +42,24 @@ DEFAULT_GROUPS = ("todo", "other", "future")
 
 
 def get_db_connection() -> sqlite3.Connection:
-    """Returns a SQLite connection with PRAGMA foreign_keys = ON and Row factory."""
+    """Returns a SQLite connection with WAL, foreign keys and busy timeout."""
     os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA journal_mode = WAL;")
+    conn.execute("PRAGMA busy_timeout = 3000;")
     conn.execute("PRAGMA foreign_keys = ON;")
     return conn
 
 
+_INITIALIZED = False
+
+
 def init_db():
-    """Initializes SQLite schema if tables do not exist."""
+    """Initializes SQLite schema if tables do not exist (once per process)."""
+    global _INITIALIZED
+    if _INITIALIZED:
+        return
     with get_db_connection() as conn:
         conn.executescript("""
             CREATE TABLE IF NOT EXISTS groups (
@@ -81,6 +89,9 @@ def init_db():
                 UNIQUE (start, end),
                 FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE SET NULL
             );
+
+            CREATE INDEX IF NOT EXISTS idx_time_entries_start ON time_entries(start);
+            CREATE INDEX IF NOT EXISTS idx_time_entries_task ON time_entries(task_id);
         """)
 
         # Migrate: older schema used timew_id (positional, unstable) as the unique key,
@@ -102,8 +113,11 @@ def init_db():
                     FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE SET NULL
                 )
             """)
+            conn.execute("CREATE INDEX idx_time_entries_start ON time_entries(start);")
+            conn.execute("CREATE INDEX idx_time_entries_task ON time_entries(task_id);")
 
     ensure_default_groups()
+    _INITIALIZED = True
 
 
 def ensure_default_groups():
@@ -391,7 +405,9 @@ def _get_durations_where(where: str, params: tuple) -> Dict[Optional[int], int]:
 
 def get_durations_for_date(date_str: str) -> Dict[int, int]:
     """Returns {task_id: seconds} aggregated from time_entries for the given date (YYYY-MM-DD)."""
-    d = _get_durations_where("date(start) = ?", (date_str,))
+    start = date_str + " 00:00:00"
+    end = (datetime.strptime(date_str, "%Y-%m-%d") + timedelta(days=1)).strftime("%Y-%m-%d 00:00:00")
+    d = _get_durations_where("start >= ? AND start < ?", (start, end))
     return {k: v for k, v in d.items() if k is not None}
 
 

@@ -37,6 +37,7 @@ LOCK_FILE = os.path.expanduser("~/.cache/rehoboam_widget.lock")
 
 POLL_SECONDS = 1.0
 IMPORT_EVERY_TICKS = 30  # re-import finished timew intervals into the DB
+IDLE_RECHECK_TICKS = 3  # while idle, re-check for a new interval every N seconds
 
 
 def format_run_time(seconds: int) -> str:
@@ -126,10 +127,15 @@ def main():
         return 1
 
     tick = 0
-    last_active_start = None
+    last_active_start = ""  # "" forces a full first tick so the cache is seeded
     try:
         while True:
             tick += 1
+            # Fully idle: the payload can't change, so only re-check for a new
+            # interval occasionally instead of exporting timew every second.
+            if last_active_start is None and tick % IDLE_RECHECK_TICKS != 0:
+                time.sleep(POLL_SECONDS)
+                continue
             error = None
             active_task_id = None
             live_seconds = 0

@@ -64,7 +64,7 @@ PlasmoidItem {
 
     property real pupilAngle: 0
     property bool hasActive: activeIndex >= 0
-    property string lastSig: ""
+    property string layoutKey: ""
 
     opacity: root.online ? 1.0 : 0.72
     Behavior on opacity {
@@ -342,44 +342,41 @@ PlasmoidItem {
 
     function applyState(state) {
         const tasks = state.tasks ? state.tasks : [];
-        const sig = JSON.stringify(tasks.map(t => [t.id, t.description, t.category, t.run_time, t.run_seconds, t.is_active === true]));
-        if (sig === root.lastSig) {
-            return;
-        }
-        root.lastSig = sig;
-
         const n = tasks.length;
-        const radius = Math.min(root.width / 2 - root.nodeW / 2, root.height / 2 - root.nodeH / 2) - 34;
         let newActive = -1;
 
-        function build(i) {
-            const t = tasks[i];
-            const ang = -90 + i * 360 / Math.max(n, 1);
-            const rad = radians(ang);
-            const nx = Math.cos(rad) * radius;
-            const ny = Math.sin(rad) * radius;
-            const g = armGeometry(nx, ny);
-            if (t.is_active) {
-                newActive = i;
-            }
-            return {
-                id: t.id,
-                description: t.description,
-                group: t.group,
-                category: t.category,
-                runTime: t.run_time,
-                runSeconds: t.run_seconds,
-                isActive: t.is_active === true,
-                angle: ang,
-                nodeX: nx,
-                nodeY: ny,
-                pathLen: cubicLen(g.sx, g.sy, g.c1x, g.c1y, g.c2x, g.c2y, g.tx, g.ty),
-                sx: g.sx, sy: g.sy, tx: g.tx, ty: g.ty,
-                c1x: g.c1x, c1y: g.c1y, c2x: g.c2x, c2y: g.c2y
-            };
-        }
+        const key = n + "|" + Math.round(root.width) + "|" + Math.round(root.height);
+        if (key !== root.layoutKey) {
+            root.layoutKey = key;
+            const radius = Math.min(root.width / 2 - root.nodeW / 2, root.height / 2 - root.nodeH / 2) - 34;
 
-        if (n !== taskModel.count) {
+            function build(i) {
+                const t = tasks[i];
+                const ang = -90 + i * 360 / Math.max(n, 1);
+                const rad = radians(ang);
+                const nx = Math.cos(rad) * radius;
+                const ny = Math.sin(rad) * radius;
+                const g = armGeometry(nx, ny);
+                if (t.is_active) {
+                    newActive = i;
+                }
+                return {
+                    id: t.id,
+                    description: t.description,
+                    group: t.group,
+                    category: t.category,
+                    runTime: t.run_time,
+                    runSeconds: t.run_seconds,
+                    isActive: t.is_active === true,
+                    angle: ang,
+                    nodeX: nx,
+                    nodeY: ny,
+                    pathLen: cubicLen(g.sx, g.sy, g.c1x, g.c1y, g.c2x, g.c2y, g.tx, g.ty),
+                    sx: g.sx, sy: g.sy, tx: g.tx, ty: g.ty,
+                    c1x: g.c1x, c1y: g.c1y, c2x: g.c2x, c2y: g.c2y
+                };
+            }
+
             root.hidePopup();
             taskModel.clear();
             for (let i = 0; i < n; i++) {
@@ -387,7 +384,19 @@ PlasmoidItem {
             }
         } else {
             for (let i = 0; i < n; i++) {
-                taskModel.set(i, build(i));
+                const t = tasks[i];
+                const active = t.is_active === true;
+                if (active) {
+                    newActive = i;
+                }
+                const row = taskModel.get(i);
+                if (row.runSeconds !== t.run_seconds) {
+                    taskModel.setProperty(i, "runTime", t.run_time);
+                    taskModel.setProperty(i, "runSeconds", t.run_seconds);
+                }
+                if (row.isActive !== active) {
+                    taskModel.setProperty(i, "isActive", active);
+                }
             }
         }
 
