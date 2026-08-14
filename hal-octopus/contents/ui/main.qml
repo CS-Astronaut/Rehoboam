@@ -79,8 +79,13 @@ PlasmoidItem {
         onNewData: function(source, data) {
             if (data.stdout) {
                 try {
-                    applyState(JSON.parse(data.stdout));
+                    const st = JSON.parse(data.stdout);
+                    applyState(st);
                     online = true;
+                    if (st.error) {
+                        root.actionError = st.error;
+                        errorTimer.restart();
+                    }
                 } catch (err) {
                     online = false;
                 }

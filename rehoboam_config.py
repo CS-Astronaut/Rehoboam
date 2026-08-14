@@ -108,15 +108,17 @@ def main():
     elif cmd == "get":
         print(load_config().get(sys.argv[2], ""))
     elif cmd == "set":
-        key, value = sys.argv[2], expand(sys.argv[3])
+        key = sys.argv[2]
+        value = expand(sys.argv[3]) if len(sys.argv) > 3 else ""
         data = load_config()
-        data[key] = value
+        if value:
+            data[key] = value
+        else:
+            data.pop(key, None)
         save_config(data)
     elif cmd == "cat":
         with open(expand(sys.argv[2]), encoding="utf-8") as f:
             print(f.read())
-    elif cmd == "list":
-        print(json.dumps(list_board()))
     elif cmd == "get-timew":
         print(get_timew_value(sys.argv[2]))
     elif cmd == "timew-config":

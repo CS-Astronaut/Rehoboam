@@ -79,7 +79,7 @@ KCM.SimpleKCM {
             if (groupsRepeater.itemAt(i).checked) names.push(kanbanPage.boardGroups[i]);
         }
         run("python3 " + kanbanPage.helper + " set HIDDEN_GROUPS " +
-            (names.length ? encArg(names.join(",")) : "''"));
+            encArg(names.join(",")));
     }
 
     function loadValues() {
