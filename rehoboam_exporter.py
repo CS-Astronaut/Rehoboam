@@ -142,15 +142,19 @@ def main():
                     tasks = [t for t in tasks if t["group_name"].strip().lower() not in hidden]
                 export_data = read_timew_export()
                 entry, start_local = fetch_active_interval(export_data)
-                if entry is not None:
-                    if start_local != last_active_start:
+                if entry is None:
+                    if last_active_start is not None:
                         rehoboam_db.import_timew_entries(":day")
-                        last_active_start = start_local
-                    try:
-                        start_dt = datetime.strptime(start_local, "%Y-%m-%d %H:%M:%S")
-                        live_seconds = max(int((datetime.now() - start_dt).total_seconds()), 0)
-                    except Exception:
-                        live_seconds = 0
+                        last_active_start = None
+                elif start_local != last_active_start:
+                    rehoboam_db.import_timew_entries(":day")
+                    last_active_start = start_local
+                try:
+                    start_dt = datetime.strptime(start_local, "%Y-%m-%d %H:%M:%S")
+                    live_seconds = max(int((datetime.now() - start_dt).total_seconds()), 0)
+                except Exception:
+                    live_seconds = 0
+                if entry is not None:
                     with rehoboam_db.get_db_connection() as conn:
                         active_task_id = rehoboam_db.match_task_id(conn, entry.get("annotation", ""))
                     if active_task_id is None:

@@ -1103,68 +1103,63 @@ PlasmoidItem {
                 }
             }
 
-            Column {
+            ColumnLayout {
                 z: 3
                 anchors.fill: parent
                 anchors.margins: 12
-                spacing: 3
+                spacing: 4
 
-                Row {
+                RowLayout {
                     spacing: 7
-                    Item {
-                        visible: isActive
-                        width: 12
-                        height: 12
-                        anchors.verticalCenter: parent.verticalCenter
-                        Rectangle {
-                            anchors.centerIn: parent
-                            width: 5
-                            height: 5
-                            radius: 2.5
-                            color: root.cAccent
-                        }
-                    }
+                    Layout.fillWidth: true
+
                     Text {
                         text: model.runTime
                         color: isActive ? root.cAccent : root.cFg
-                        font.pixelSize: 15
+                        font.pixelSize: 13
                         font.bold: true
                         font.letterSpacing: 1
+                    }
+
+                    Item {
+                        Layout.fillWidth: true
+                    }
+
+                    Rectangle {
+                        height: 17
+                        width: pillText.implicitWidth + 14
+                        radius: 8.5
+                        Layout.alignment: Qt.AlignVCenter
+                        color: isActive
+                            ? Qt.rgba(root.cAccent.r, root.cAccent.g, root.cAccent.b, 0.15)
+                            : Qt.rgba(root.cFg.r, root.cFg.g, root.cFg.b, 0.06)
+                        border.color: isActive
+                            ? Qt.rgba(root.cAccent.r, root.cAccent.g, root.cAccent.b, 0.33)
+                            : Qt.rgba(root.cFg.r, root.cFg.g, root.cFg.b, 0.18)
+                        border.width: 1
+                        Text {
+                            id: pillText
+                            anchors.centerIn: parent
+                            text: model.category
+                            color: root.categoryColor(model.category)
+                            opacity: isActive ? 1.0 : 0.75
+                            font.pixelSize: 10
+                            font.letterSpacing: 0.8
+                            font.capitalization: Font.SmallCaps
+                        }
                     }
                 }
 
                 Text {
-                    width: parent.width
                     text: model.description
                     color: root.cFg
-                    font.pixelSize: 11
+                    font.pixelSize: 12
                     wrapMode: Text.Wrap
-                    maximumLineCount: 2
+                    maximumLineCount: 3
                     elide: Text.ElideRight
                     lineHeight: 1.15
-                }
-
-                Rectangle {
-                    width: pillText.implicitWidth + 14
-                    height: 17
-                    radius: 8.5
-                    color: isActive
-                        ? Qt.rgba(root.cAccent.r, root.cAccent.g, root.cAccent.b, 0.15)
-                        : Qt.rgba(root.cFg.r, root.cFg.g, root.cFg.b, 0.06)
-                    border.color: isActive
-                        ? Qt.rgba(root.cAccent.r, root.cAccent.g, root.cAccent.b, 0.33)
-                        : Qt.rgba(root.cFg.r, root.cFg.g, root.cFg.b, 0.18)
-                    border.width: 1
-                    Text {
-                        id: pillText
-                        anchors.centerIn: parent
-                        text: model.category
-                        color: root.categoryColor(model.category)
-                        opacity: isActive ? 1.0 : 0.75
-                        font.pixelSize: 10
-                        font.letterSpacing: 0.8
-                        font.capitalization: Font.SmallCaps
-                    }
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
                 }
             }
         }
