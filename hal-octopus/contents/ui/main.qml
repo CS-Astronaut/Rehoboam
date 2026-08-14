@@ -45,6 +45,7 @@ PlasmoidItem {
     }
     property var taskModel: ListModel {}
     property int activeIndex: -1
+    property bool tracking: false
     property bool online: false
     property string actionError: ""
     property var boardGroups: []
@@ -208,6 +209,14 @@ PlasmoidItem {
                 runAction("python3 " + root.helper + " task-rename " +
                           task.id + " " + encArg(title));
             }
+            for (let i = 0; i < taskModel.count; i++) {
+                if (taskModel.get(i).id === task.id) {
+                    taskModel.setProperty(i, "description", title);
+                    taskModel.setProperty(i, "group", group);
+                    taskModel.setProperty(i, "category", "@" + group);
+                    break;
+                }
+            }
         } else {
             runAction("python3 " + root.helper + " add-task " +
                       encArg(group) + " " + encArg(title));
@@ -227,7 +236,7 @@ PlasmoidItem {
             confirmPopup.forceActiveFocus();
             return;
         }
-        const isSwitch = root.hasActive;
+        const isSwitch = root.hasActive || root.tracking;
         root.pendingTrack = {
             action: isSwitch ? "switch" : "start",
             group: entry.group,
@@ -332,7 +341,7 @@ PlasmoidItem {
         const py = Math.cos(angle);
         const sx = Math.cos(angle) * (root.eyeR - 8);
         const sy = Math.sin(angle) * (root.eyeR - 8);
-        const endRad = root.nodeH / 2 + 4;
+        const endRad = root.nodeH / 2 - 8;
         const tx = nodeX - Math.cos(angle) * endRad;
         const ty = nodeY - Math.sin(angle) * endRad;
         const bulge = len * 0.24;
@@ -349,6 +358,7 @@ PlasmoidItem {
         const tasks = state.tasks ? state.tasks : [];
         const n = tasks.length;
         let newActive = -1;
+        root.tracking = state.tracking === true;
 
         const key = n + "|" + Math.round(root.width) + "|" + Math.round(root.height);
         if (key !== root.layoutKey) {
@@ -395,6 +405,11 @@ PlasmoidItem {
                     newActive = i;
                 }
                 const row = taskModel.get(i);
+                if (row.description !== t.description || row.group !== t.group) {
+                    taskModel.setProperty(i, "description", t.description);
+                    taskModel.setProperty(i, "group", t.group);
+                    taskModel.setProperty(i, "category", t.category);
+                }
                 if (row.runSeconds !== t.run_seconds) {
                     taskModel.setProperty(i, "runTime", t.run_time);
                     taskModel.setProperty(i, "runSeconds", t.run_seconds);

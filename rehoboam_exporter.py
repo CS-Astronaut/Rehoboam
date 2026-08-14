@@ -63,17 +63,18 @@ def fetch_active_interval(export_data):
 def match_task_by_group_tag(tasks, tag, annotation):
     """Fallback matcher: group_name must equal the timew tag, description fuzzy."""
     ann = (annotation or "").strip().lower()
-    if not ann:
-        return None
     candidates = [t for t in tasks if t["group_name"].strip().lower() == (tag or "").strip().lower()]
-    for t in candidates:
-        desc = (t["description"] or "").strip().lower()
-        if desc and (ann in desc or desc in ann):
-            return t["id"]
+    if ann:
+        for t in candidates:
+            desc = (t["description"] or "").strip().lower()
+            if desc and (ann in desc or desc in ann):
+                return t["id"]
+    if len(candidates) == 1:
+        return candidates[0]["id"]
     return None
 
 
-def build_payload(tasks, active_task_id, today_durs, error=None):
+def build_payload(tasks, active_task_id, today_durs, tracking, error=None):
     entries = []
     for t in tasks:
         seconds = int(today_durs.get(t["id"], 0))
@@ -90,6 +91,7 @@ def build_payload(tasks, active_task_id, today_durs, error=None):
     payload = {
         "timestamp": datetime.now().isoformat(timespec="seconds"),
         "active_task_id": active_task_id,
+        "tracking": tracking,
         "error": error,
         "tasks": entries,
     }
@@ -151,6 +153,7 @@ def main():
             live_seconds = 0
             tasks = []
             today_durs = {}
+            tracking = False
             try:
                 tasks = list(rehoboam_db.get_open_tasks())
                 hidden = rehoboam_db.get_hidden_groups()
@@ -158,6 +161,7 @@ def main():
                     tasks = [t for t in tasks if t["group_name"].strip().lower() not in hidden]
                 export_data = read_timew_export()
                 entry, start_local = fetch_active_interval(export_data)
+                tracking = entry is not None
                 if entry is None:
                     if last_active_start is not None:
                         rehoboam_db.import_timew_entries(":day")
@@ -186,7 +190,7 @@ def main():
                 tasks = []
                 active_task_id = None
 
-            payload = build_payload(tasks, active_task_id, today_durs, error=error)
+            payload = build_payload(tasks, active_task_id, today_durs, tracking, error=error)
             atomic_write(payload)
             time.sleep(POLL_SECONDS)
     except KeyboardInterrupt:
