@@ -133,9 +133,19 @@ def main():
             tick += 1
             # Fully idle: the payload can't change, so only re-check for a new
             # interval occasionally instead of exporting timew every second.
+            # A cheap dom.active query on every idle tick still catches a fresh
+            # start within ~1s, keeping the widget's optimistic window intact.
             if last_active_start is None and tick % IDLE_RECHECK_TICKS != 0:
-                time.sleep(POLL_SECONDS)
-                continue
+                try:
+                    active = subprocess.run(
+                        ["timew", "get", "dom.active"],
+                        capture_output=True, text=True, timeout=2
+                    ).stdout.strip() == "1"
+                except Exception:
+                    active = False
+                if not active:
+                    time.sleep(POLL_SECONDS)
+                    continue
             error = None
             active_task_id = None
             live_seconds = 0

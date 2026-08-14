@@ -250,7 +250,7 @@ PlasmoidItem {
         }
         root.cancelTrack();
         root.prevActiveIndex = root.activeIndex;
-        root.optimisticUntil = Date.now() + 1500;
+        root.optimisticUntil = Date.now() + 4000;
         if (p.action === "stop") {
             root.pendingTrackAction = "stop";
             root.optimisticActive = -1;
