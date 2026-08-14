@@ -25,6 +25,10 @@ truth: a SQLite database. It wears two faces:
   renders the open board as glowing nodes on a HAL 9000 eye, with click-to-track,
   a hover popup, and a full KDE configuration dialog.
 
+<p align="center">
+  <img alt="showcase" src="./assets/showcase.gif">
+</p>
+
 ---
 
 ## Features
