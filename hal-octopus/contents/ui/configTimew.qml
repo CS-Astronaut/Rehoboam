@@ -16,6 +16,8 @@ KCM.SimpleKCM {
     property int cfg_pollIntervalDefault: 1
     property int cfg_hoverDelay: 2000
     property int cfg_hoverDelayDefault: 2000
+    property string cfg_accentColor: ""
+    property string cfg_accentColorDefault: ""
 
     function encArg(s) {
         return encodeURIComponent(s).replace(/[!'()*~]/g, c => "%" + c.charCodeAt(0).toString(16).toUpperCase());

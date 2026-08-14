@@ -15,6 +15,8 @@ KCM.SimpleKCM {
     property int cfg_pollIntervalDefault: 1
     property int cfg_hoverDelay: 2000
     property int cfg_hoverDelayDefault: 2000
+    property string cfg_accentColor: ""
+    property string cfg_accentColorDefault: ""
 
     property var boardGroups: []
     property var hiddenSet: ({})

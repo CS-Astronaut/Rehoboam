@@ -207,12 +207,16 @@ timew annotate @1 "fix bug"     # annotation = the task description
 
 ## The widget
 
-- **Eye** — open tasks render as nodes on bezier octopus arms. When tracking,
-  the active node glows, its arm flashes, and the pupil locks onto it.
+- **Eye** — open tasks render as nodes on bezier octopus arms. When tracking
+  starts, the active arm fills in a slow cinematic sweep (with a bright leading
+  shimmer front) from the pupil to the card, then the card's shadow blooms in —
+  the color stays until tracking stops, then drains back toward the pupil.
 - **Click to track** — click a node to start TimeWarrior, click the active node
   to stop, click another node to switch. Starting, stopping, and switching all
   ask for confirmation first (switching warns that the current timer will be
-  stopped); updates land within ~1 s.
+  stopped); the eye reacts instantly (pupil locks onto the chosen node, glow and
+  ring flip), and the state refresh is pushed through within ~1 s — the change
+  is reverted if the `timew` command fails.
 - **Click the eye** — opens an *Add task* popup with an editable group picker
   (pick an existing group or type a new one, auto-created) and a title field.
   The new node appears within ~1 s.
@@ -222,6 +226,11 @@ timew annotate @1 "fix bug"     # annotation = the task description
   *Delete*. Changes land within ~1 s.
 - **Hover popup** — after `hoverDelay` ms, a card shows category, run time, task
   `#id`, and description.
+- **Calm at rest** — idle, the eye is still: no spinning reticle, breathing halo,
+  or wandering pupil, and no glows on the task cards. Colors follow the KDE
+  theme and system accent (`accentColor` overrides it); when tracking, the eye
+  wakes up: the pupil locks onto the active node and its accent-colored glow
+  appears.
 - **Polling** — the widget polls the state file every `pollInterval` seconds
   (values are in seconds, clamped to ≥ 1 s).
 
@@ -256,7 +265,8 @@ shows the problem (plus an `OFFLINE` label when the snapshot isn't reachable).
   the eye. Edits write through to `~/.config/rehoboam/config`.
 - **TimeWarrior** — start tracking from live group/task dropdowns, stop /
   continue, and tune `maxtracking`, `verbose`, and `confirmation`.
-- **Widget** — `stateFile`, `pollInterval` (s), `hoverDelay` (ms).
+- **Widget** — `stateFile`, `pollInterval` (s), `hoverDelay` (ms), `accentColor`
+  (`#RRGGBB`, empty = system accent).
 
 ## `rehoboam_config.py`
 

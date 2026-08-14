@@ -2,6 +2,7 @@ import QtQuick
 import QtQuick.Controls as QtControls
 import QtQuick.Layouts
 import QtQuick.Shapes
+import org.kde.kirigami as Kirigami
 import org.kde.plasma.core as PlasmaCore
 import org.kde.plasma.plasmoid
 import org.kde.plasma.plasma5support as Plasma5Support
@@ -18,17 +19,22 @@ PlasmoidItem {
 
     Plasmoid.backgroundHints: PlasmaCore.Types.NoBackground
 
-    readonly property color cBg: "#1a1b26"
-    readonly property color cFg: "#c0caf5"
-    readonly property color cDim: "#565f89"
-    readonly property color cRed: "#f7768e"
-    readonly property color cNeonRed: "#ff2244"
+    readonly property color cFg: Kirigami.Theme.textColor
+    readonly property color cDim: Kirigami.Theme.disabledTextColor
+    readonly property color cRed: Kirigami.Theme.negativeTextColor
     readonly property color cOrange: "#e0af68"
-    readonly property color cNeonOrange: "#ff9e64"
-    readonly property color cGray: "#414868"
-    readonly property color cIdlePupil: "#3b4252"
-    readonly property color cPanelTop: "#232943"
-    readonly property color cPanelBot: "#131622"
+    readonly property color cGray: Qt.rgba(Kirigami.Theme.textColor.r, Kirigami.Theme.textColor.g, Kirigami.Theme.textColor.b, 0.3)
+    readonly property color cPanelTop: Kirigami.Theme.backgroundColor
+    readonly property color cPanelBot: Qt.darker(Kirigami.Theme.backgroundColor, 1.15)
+    readonly property bool isLightTheme: Kirigami.Theme.textColor.r + Kirigami.Theme.textColor.g + Kirigami.Theme.textColor.b < 1.2
+    readonly property color cAccent: {
+        const m = /^#?([0-9a-fA-F]{6})$/.exec((plasmoid.configuration.accentColor || "").trim());
+        return m
+            ? Qt.rgba(parseInt(m[1].substring(0, 2), 16) / 255,
+                      parseInt(m[1].substring(2, 4), 16) / 255,
+                      parseInt(m[1].substring(4, 6), 16) / 255, 1)
+            : Kirigami.Theme.highlightColor;
+    }
 
     readonly property string helper: "/home/rigel/.local/share/rehoboam/rehoboam_config.py"
     property string stateFile: plasmoid.configuration.stateFile
@@ -45,6 +51,10 @@ PlasmoidItem {
     property string popupMode: "add"
     property var popupTask: null
     property var pendingTrack: null
+    property int optimisticActive: -1
+    property double optimisticUntil: 0
+    property int prevActiveIndex: -1
+    property string pendingTrackAction: ""
 
     property real eyeCx: width / 2
     property real eyeCy: height / 2
@@ -52,38 +62,13 @@ PlasmoidItem {
     property real nodeW: 160
     property real nodeH: 92
 
-    property real pupilAngle: -20
+    property real pupilAngle: 0
     property bool hasActive: activeIndex >= 0
     property string lastSig: ""
-    property real haloOpacity: 0.65
-    property real reticleStep: 1
-    property real nodePulse: 0.775
-    property real armFlash: 1
 
     opacity: root.online ? 1.0 : 0.72
     Behavior on opacity {
         NumberAnimation { duration: 600 }
-    }
-
-    Timer {
-        id: tick
-        interval: 300
-        repeat: true
-        running: root.online
-        property real phase: 0
-        property int snapCount: 0
-        onTriggered: {
-            reticle.rotation = (reticle.rotation + root.reticleStep) % 360;
-            phase = phase + 0.18;
-            root.haloOpacity = 0.765 + 0.115 * Math.sin(phase);
-            root.nodePulse = 0.6 + 0.35 * (0.5 + 0.5 * Math.sin(phase));
-            root.armFlash = 0.5 + 0.5 * Math.sin(phase * 3);
-            if (++snapCount >= 10) {
-                snapCount = 0;
-                if (!root.hasActive)
-                    pupilAngle = -38 + Math.random() * 76;
-            }
-        }
     }
 
     Plasma5Support.DataSource {
@@ -133,14 +118,41 @@ PlasmoidItem {
                 root.actionError = data.stderr.trim();
                 errorTimer.restart();
                 console.warn("rehoboam action failed:", data.stderr.trim());
+                if (root.pendingTrackAction !== "") {
+                    root.pendingTrackAction = "";
+                    root.optimisticActive = -1;
+                    root.optimisticUntil = 0;
+                    root.activeIndex = root.prevActiveIndex;
+                    if (root.prevActiveIndex >= 0) {
+                        aimPupil(taskModel.get(root.prevActiveIndex).angle);
+                    } else {
+                        pupilAnim.stop();
+                    }
+                }
             } else {
                 root.actionError = "";
+                if (root.pendingTrackAction !== "") {
+                    root.pendingTrackAction = "";
+                }
+                refreshState();
+                catchupTimer.restart();
             }
         }
     }
 
     function runAction(cmd) {
         actionSource.connectSource(cmd);
+    }
+
+    function refreshState() {
+        stateSource.disconnectSource(root.stateCmd);
+        stateSource.connectSource(root.stateCmd);
+    }
+
+    Timer {
+        id: catchupTimer
+        interval: 1000
+        onTriggered: root.refreshState()
     }
 
     function runContextAction(cmd) {
@@ -198,7 +210,7 @@ PlasmoidItem {
         root.closeAddTask();
     }
 
-    function toggleTracking(entry) {
+    function toggleTracking(entry, index) {
         root.hidePopup();
         if (entry.isActive) {
             root.pendingTrack = { action: "stop" };
@@ -214,7 +226,8 @@ PlasmoidItem {
         root.pendingTrack = {
             action: isSwitch ? "switch" : "start",
             group: entry.group,
-            description: entry.description
+            description: entry.description,
+            index: index
         };
         confirmTrackTitle.text = isSwitch ? i18n("Switch tracking") : i18n("Start tracking");
         confirmTrackSub.text = i18n("This will stop the previous timer!");
@@ -231,15 +244,30 @@ PlasmoidItem {
             return;
         }
         root.cancelTrack();
+        root.prevActiveIndex = root.activeIndex;
+        root.optimisticUntil = Date.now() + 1500;
         if (p.action === "stop") {
+            root.pendingTrackAction = "stop";
+            root.optimisticActive = -1;
+            pupilAnim.stop();
+            root.activeIndex = -1;
             runAction("timew stop");
         } else if (p.action === "switch") {
+            root.pendingTrackAction = "switch";
+            root.optimisticActive = p.index;
+            root.activeIndex = p.index;
+            aimPupil(taskModel.get(p.index).angle);
             runAction("python3 " + root.helper + " timew-switch " +
                       encArg(p.group) + " " + encArg(p.description));
         } else {
+            root.pendingTrackAction = "start";
+            root.optimisticActive = p.index;
+            root.activeIndex = p.index;
+            aimPupil(taskModel.get(p.index).angle);
             runAction("python3 " + root.helper + " timew-start " +
                       encArg(p.group) + " " + encArg(p.description));
         }
+        catchupTimer.restart();
     }
 
     function cancelTrack() {
@@ -249,12 +277,13 @@ PlasmoidItem {
     }
 
     function categoryColor(cat) {
+        let c = "#7aa2f7";
         switch (cat) {
-        case "mic": return "#bb9af7";
-        case "future": return "#7dcfff";
-        case "todo": return "#e0af68";
-        default: return "#7aa2f7";
+        case "mic": c = "#bb9af7"; break;
+        case "future": c = "#7dcfff"; break;
+        case "todo": c = "#e0af68"; break;
         }
+        return root.isLightTheme ? Qt.darker(c, 1.7) : c;
     }
 
     function radians(deg) {
@@ -272,6 +301,23 @@ PlasmoidItem {
         g.addColorStop(1, "rgba(0,0,0,0)");
         ctx.fillStyle = g;
         ctx.fillRect(0, 0, w, h);
+    }
+
+    function cubicLen(x0, y0, c1x, c1y, c2x, c2y, x1, y1) {
+        const steps = 24;
+        let len = 0;
+        let px = x0;
+        let py = y0;
+        for (let i = 1; i <= steps; i++) {
+            const t = i / steps;
+            const mt = 1 - t;
+            const x = mt * mt * mt * x0 + 3 * mt * mt * t * c1x + 3 * mt * t * t * c2x + t * t * t * x1;
+            const y = mt * mt * mt * y0 + 3 * mt * mt * t * c1y + 3 * mt * t * t * c2y + t * t * t * y1;
+            len += Math.hypot(x - px, y - py);
+            px = x;
+            py = y;
+        }
+        return len;
     }
 
     function armGeometry(nodeX, nodeY) {
@@ -327,6 +373,7 @@ PlasmoidItem {
                 angle: ang,
                 nodeX: nx,
                 nodeY: ny,
+                pathLen: cubicLen(g.sx, g.sy, g.c1x, g.c1y, g.c2x, g.c2y, g.tx, g.ty),
                 sx: g.sx, sy: g.sy, tx: g.tx, ty: g.ty,
                 c1x: g.c1x, c1y: g.c1y, c2x: g.c2x, c2y: g.c2y
             };
@@ -345,12 +392,18 @@ PlasmoidItem {
         }
 
         if (newActive !== activeIndex) {
-            if (newActive >= 0) {
-                aimPupil(taskModel.get(newActive).angle);
-            } else {
-                pupilAnim.stop();
+            const withinGrace = Date.now() < root.optimisticUntil;
+            const matchesOptimistic = newActive === root.optimisticActive;
+            if (!withinGrace || matchesOptimistic) {
+                if (newActive >= 0) {
+                    aimPupil(taskModel.get(newActive).angle);
+                } else {
+                    pupilAnim.stop();
+                }
+                activeIndex = newActive;
+                root.optimisticActive = -1;
+                root.optimisticUntil = 0;
             }
-            activeIndex = newActive;
         }
     }
 
@@ -358,6 +411,13 @@ PlasmoidItem {
         pupilAnim.from = pupilAngle;
         pupilAnim.to = angle;
         pupilAnim.start();
+    }
+
+    function isNodeActive(index, snapshotActive) {
+        if (Date.now() < root.optimisticUntil) {
+            return index === root.optimisticActive;
+        }
+        return snapshotActive;
     }
 
     function showPopup(node, description, category, runTime, taskId) {
@@ -382,16 +442,45 @@ PlasmoidItem {
         z: 0
         model: root.taskModel
         delegate: Item {
+            id: arm
             x: root.eyeCx
             y: root.eyeCy
             width: 1
             height: 1
+            property bool isActive: root.isNodeActive(index, model.isActive)
+            property real cascadeProgress: isActive ? 1 : 0
+
+            onIsActiveChanged: {
+                if (isActive) {
+                    cascadeIn.start();
+                } else {
+                    cascadeOut.start();
+                }
+            }
+
+            NumberAnimation {
+                id: cascadeIn
+                target: arm
+                property: "cascadeProgress"
+                to: 1
+                duration: 1250
+                easing.type: Easing.InOutCubic
+            }
+            NumberAnimation {
+                id: cascadeOut
+                target: arm
+                property: "cascadeProgress"
+                to: 0
+                duration: 950
+                easing.type: Easing.InOutCubic
+            }
+
             Shape {
                 anchors.fill: parent
                 antialiasing: true
                 ShapePath {
                     fillColor: "transparent"
-                    strokeColor: model.isActive ? "#3ce0af68" : "#1c414868"
+                    strokeColor: isActive ? Qt.rgba(root.cAccent.r, root.cAccent.g, root.cAccent.b, 0.24) : "#1c414868"
                     strokeWidth: 15
                     startX: model.sx
                     startY: model.sy
@@ -406,10 +495,37 @@ PlasmoidItem {
                 }
                 ShapePath {
                     fillColor: "transparent"
-                    strokeColor: model.isActive ? Qt.rgba(1.0, 0.62, 0.39, 0.35 + 0.65 * root.armFlash) : "#4a5170"
-                    strokeWidth: model.isActive ? 6 : 2
-                    strokeStyle: ShapePath.SolidLine
+                    strokeColor: Qt.rgba(root.cAccent.r, root.cAccent.g, root.cAccent.b, 1.0)
+                    strokeWidth: 6
+                    strokeStyle: ShapePath.DashLine
                     capStyle: ShapePath.FlatCap
+                    dashPattern: [model.pathLen, model.pathLen]
+                    dashOffset: model.pathLen * (1 - cascadeProgress)
+                    startX: model.sx
+                    startY: model.sy
+                    PathCubic {
+                        x: model.tx
+                        y: model.ty
+                        control1X: model.c1x
+                        control1Y: model.c1y
+                        control2X: model.c2x
+                        control2Y: model.c2y
+                    }
+                }
+            }
+
+            Shape {
+                anchors.fill: parent
+                antialiasing: true
+                opacity: isActive ? 1 - cascadeProgress : 0
+                ShapePath {
+                    fillColor: "transparent"
+                    strokeColor: Qt.tint(root.cAccent, "#66ffffff")
+                    strokeWidth: 4.5
+                    strokeStyle: ShapePath.DashLine
+                    capStyle: ShapePath.FlatCap
+                    dashPattern: [24, 24]
+                    dashOffset: model.pathLen * (1 - cascadeProgress) + 10
                     startX: model.sx
                     startY: model.sy
                     PathCubic {
@@ -439,24 +555,30 @@ PlasmoidItem {
             width: parent.width * 1.9
             height: parent.height * 1.9
             property bool isOnline: root.online
-            property bool isLocked: root.hasActive
+            property color accent: root.cAccent
             onIsOnlineChanged: requestPaint()
-            onIsLockedChanged: requestPaint()
+            onAccentChanged: requestPaint()
             onPaint: {
                 const ctx = getContext("2d");
+                const a = root.cAccent;
                 drawRadialGlow(ctx, width, height,
-                    isOnline ? (isLocked ? "#55ff2244" : "#5ce0af68") : "#2e3b4252",
-                    isOnline ? (isLocked ? "#26ff2244" : "#2ce0af68") : "#1a3b4252",
+                    root.online ? Qt.rgba(a.r, a.g, a.b, 0.55) : "#2e3b4252",
+                    root.online ? Qt.rgba(a.r, a.g, a.b, 0.28) : "#1a3b4252",
                     0.55);
             }
-            opacity: root.online ? root.haloOpacity : 0.25
+            opacity: root.hasActive ? 0.85 : (root.online ? 0 : 0.25)
+            Behavior on opacity {
+                NumberAnimation { duration: 500 }
+            }
         }
 
         Canvas {
             id: chassis
             anchors.fill: parent
-                property color ring: root.online ? (root.hasActive ? "#80ff2244" : "#80e0af68") : "#414868" 
-                Behavior on ring {
+            property color ring: root.online
+                ? (root.hasActive ? Qt.rgba(root.cAccent.r, root.cAccent.g, root.cAccent.b, 0.8) : root.cGray)
+                : "#414868"
+            Behavior on ring {
                 ColorAnimation { duration: 400 }
             }
             onRingChanged: requestPaint()
@@ -590,7 +712,7 @@ PlasmoidItem {
                 antialiasing: true
                 ShapePath {
                     fillColor: "transparent"
-                    strokeColor: root.online ? "#38e0af68" : "#203b4252"
+                    strokeColor: root.online ? Qt.rgba(root.cAccent.r, root.cAccent.g, root.cAccent.b, 0.22) : "#203b4252"
                     strokeWidth: 1.5
                     dashPattern: [2.5, 6.5]
                     startX: reticle.width / 2
@@ -609,7 +731,7 @@ PlasmoidItem {
                 antialiasing: true
                 ShapePath {
                     fillColor: "transparent"
-                    strokeColor: root.online ? "#99e0af68" : "#33414868"
+                    strokeColor: root.online ? Qt.rgba(root.cAccent.r, root.cAccent.g, root.cAccent.b, 0.6) : "#33414868"
                     strokeWidth: 1
                     capStyle: ShapePath.FlatCap
                     startX: reticle.width / 2
@@ -618,7 +740,7 @@ PlasmoidItem {
                 }
                 ShapePath {
                     fillColor: "transparent"
-                    strokeColor: root.online ? "#99e0af68" : "#33414868"
+                    strokeColor: root.online ? Qt.rgba(root.cAccent.r, root.cAccent.g, root.cAccent.b, 0.6) : "#33414868"
                     strokeWidth: 1
                     capStyle: ShapePath.FlatCap
                     startX: reticle.width / 2
@@ -627,7 +749,7 @@ PlasmoidItem {
                 }
                 ShapePath {
                     fillColor: "transparent"
-                    strokeColor: root.online ? "#99e0af68" : "#33414868"
+                    strokeColor: root.online ? Qt.rgba(root.cAccent.r, root.cAccent.g, root.cAccent.b, 0.6) : "#33414868"
                     strokeWidth: 1
                     capStyle: ShapePath.FlatCap
                     startX: -2
@@ -636,7 +758,7 @@ PlasmoidItem {
                 }
                 ShapePath {
                     fillColor: "transparent"
-                    strokeColor: root.online ? "#99e0af68" : "#33414868"
+                    strokeColor: root.online ? Qt.rgba(root.cAccent.r, root.cAccent.g, root.cAccent.b, 0.6) : "#33414868"
                     strokeWidth: 1
                     capStyle: ShapePath.FlatCap
                     startX: reticle.width - 6
@@ -651,7 +773,7 @@ PlasmoidItem {
                 property real q: reticle.width * 0.3536
                 ShapePath {
                     fillColor: "transparent"
-                    strokeColor: root.online ? "#26e0af68" : "#1c414868"
+                    strokeColor: root.online ? Qt.rgba(root.cAccent.r, root.cAccent.g, root.cAccent.b, 0.15) : "#1c414868"
                     strokeWidth: 1
                     capStyle: ShapePath.FlatCap
                     startX: reticle.width / 2 - diagShape.q - 2.5
@@ -663,7 +785,7 @@ PlasmoidItem {
                 }
                 ShapePath {
                     fillColor: "transparent"
-                    strokeColor: root.online ? "#26e0af68" : "#1c414868"
+                    strokeColor: root.online ? Qt.rgba(root.cAccent.r, root.cAccent.g, root.cAccent.b, 0.15) : "#1c414868"
                     strokeWidth: 1
                     capStyle: ShapePath.FlatCap
                     startX: reticle.width / 2 + diagShape.q - 0.5
@@ -675,7 +797,7 @@ PlasmoidItem {
                 }
                 ShapePath {
                     fillColor: "transparent"
-                    strokeColor: root.online ? "#26e0af68" : "#1c414868"
+                    strokeColor: root.online ? Qt.rgba(root.cAccent.r, root.cAccent.g, root.cAccent.b, 0.15) : "#1c414868"
                     strokeWidth: 1
                     capStyle: ShapePath.FlatCap
                     startX: reticle.width / 2 - diagShape.q - 2.5
@@ -687,7 +809,7 @@ PlasmoidItem {
                 }
                 ShapePath {
                     fillColor: "transparent"
-                    strokeColor: root.online ? "#26e0af68" : "#1c414868"
+                    strokeColor: root.online ? Qt.rgba(root.cAccent.r, root.cAccent.g, root.cAccent.b, 0.15) : "#1c414868"
                     strokeWidth: 1
                     capStyle: ShapePath.FlatCap
                     startX: reticle.width / 2 + diagShape.q - 0.5
@@ -713,15 +835,21 @@ PlasmoidItem {
                 width: 22
                 height: 36
                 property bool isOnline: root.online
-                property bool isLocked: root.hasActive
+                property color accent: root.cAccent
                 onIsOnlineChanged: requestPaint()
-                onIsLockedChanged: requestPaint()
+                onAccentChanged: requestPaint()
+                opacity: root.hasActive ? 1 : 0
+                Behavior on opacity {
+                    NumberAnimation { duration: 400 }
+                }
                 onPaint: {
                     const ctx = getContext("2d");
                     const w = width;
                     const h = height;
                     ctx.clearRect(0, 0, w, h);
-                    const c = isOnline ? (isLocked ? "#55e0af68" : "#55f7768e") : "#333b4252";
+                    const c = isOnline
+                        ? Qt.rgba(root.cAccent.r, root.cAccent.g, root.cAccent.b, 0.33)
+                        : "#333b4252";
                     const g = ctx.createRadialGradient(w / 2, h / 2, 0, w / 2, h / 2, w / 2);
                     g.addColorStop(0, "#00ffffff");
                     g.addColorStop(0.7, c);
@@ -847,8 +975,40 @@ PlasmoidItem {
             height: root.nodeH
             x: root.eyeCx + model.nodeX - width / 2
             y: root.eyeCy + model.nodeY - height / 2
-            scale: model.isActive ? 1.06 : 1.0
-            opacity: model.isActive ? 1.0 : 0.92
+            property bool isActive: root.isNodeActive(index, model.isActive)
+            property real glowAmount: isActive ? 0.85 : 0
+
+            onIsActiveChanged: {
+                if (isActive) {
+                    glowUp.start();
+                } else {
+                    glowDown.start();
+                }
+            }
+
+            SequentialAnimation {
+                id: glowUp
+                running: false
+                PauseAnimation { duration: 700 }
+                NumberAnimation {
+                    target: node
+                    property: "glowAmount"
+                    to: 0.85
+                    duration: 480
+                    easing.type: Easing.OutQuad
+                }
+            }
+            NumberAnimation {
+                id: glowDown
+                target: node
+                property: "glowAmount"
+                to: 0
+                duration: 420
+                easing.type: Easing.InQuad
+            }
+
+            scale: isActive ? 1.06 : 1.0
+            opacity: isActive ? 1.0 : 0.92
             Behavior on scale {
                 NumberAnimation { duration: 280; easing.type: Easing.OutCubic }
             }
@@ -861,16 +1021,18 @@ PlasmoidItem {
                 z: 0
                 anchors.fill: parent
                 anchors.margins: -10
-                property bool isActive: model.isActive
+                property bool isActive: node.isActive
+                property color accent: root.cAccent
                 onIsActiveChanged: requestPaint()
+                onAccentChanged: requestPaint()
                 onPaint: {
                     const ctx = getContext("2d");
                     drawRadialGlow(ctx, width, height,
-                        isActive ? "#45e0af68" : "#1f414868",
-                        isActive ? "#26e0af68" : "#143b4252",
+                        isActive ? Qt.rgba(root.cAccent.r, root.cAccent.g, root.cAccent.b, 0.45) : "#1f414868",
+                        isActive ? Qt.rgba(root.cAccent.r, root.cAccent.g, root.cAccent.b, 0.26) : "#143b4252",
                         0.5);
                 }
-                opacity: model.isActive ? root.nodePulse : 0.4
+                opacity: node.glowAmount
             }
 
 
@@ -879,8 +1041,8 @@ PlasmoidItem {
                         anchors.fill: parent
                         radius: 14
                         
-                        border.color: model.isActive ? "#ffb454" : root.cGray
-                        border.width: model.isActive ? 3 : 1
+                        border.color: isActive ? root.cAccent : root.cGray
+                        border.width: isActive ? 3 : 1
                         
                         Behavior on border.color {
                             ColorAnimation { duration: 320 }
@@ -890,7 +1052,7 @@ PlasmoidItem {
                         gradient: Gradient {
                             GradientStop {
                                 position: 0.0
-                                color: model.isActive ? "#2e3550" : root.cPanelTop
+                                color: root.cPanelTop
                             }
                             GradientStop {
                                 position: 1.0
@@ -905,9 +1067,9 @@ PlasmoidItem {
                 anchors.fill: parent
                 radius: 14
                 color: "transparent"
-                border.color: "#ffb454"
+                border.color: root.cAccent
                 border.width: 2
-                opacity: model.isActive ? 0.55 : 0
+                opacity: isActive ? 0.55 : 0
                 Behavior on opacity {
                     NumberAnimation { duration: 300 }
                 }
@@ -936,7 +1098,7 @@ PlasmoidItem {
                         contextMenu.target = model;
                         contextMenu.popup();
                     } else {
-                        root.toggleTracking(model);
+                        root.toggleTracking(model, index);
                     }
                 }
             }
@@ -950,7 +1112,7 @@ PlasmoidItem {
                 Row {
                     spacing: 7
                     Item {
-                        visible: model.isActive
+                        visible: isActive
                         width: 12
                         height: 12
                         anchors.verticalCenter: parent.verticalCenter
@@ -959,12 +1121,12 @@ PlasmoidItem {
                             width: 5
                             height: 5
                             radius: 2.5
-                            color: root.cNeonOrange
+                            color: root.cAccent
                         }
                     }
                     Text {
                         text: model.runTime
-                        color: model.isActive ? root.cNeonOrange : "#d6dcf4"
+                        color: isActive ? root.cAccent : root.cFg
                         font.pixelSize: 15
                         font.bold: true
                         font.letterSpacing: 1
@@ -986,15 +1148,19 @@ PlasmoidItem {
                     width: pillText.implicitWidth + 14
                     height: 17
                     radius: 8.5
-                    color: model.isActive ? "#26e0af68" : "#2a3050"
-                    border.color: model.isActive ? "#55e0af68" : "#383f5c"
+                    color: isActive
+                        ? Qt.rgba(root.cAccent.r, root.cAccent.g, root.cAccent.b, 0.15)
+                        : Qt.rgba(root.cFg.r, root.cFg.g, root.cFg.b, 0.06)
+                    border.color: isActive
+                        ? Qt.rgba(root.cAccent.r, root.cAccent.g, root.cAccent.b, 0.33)
+                        : Qt.rgba(root.cFg.r, root.cFg.g, root.cFg.b, 0.18)
                     border.width: 1
                     Text {
                         id: pillText
                         anchors.centerIn: parent
                         text: model.category
                         color: root.categoryColor(model.category)
-                        opacity: model.isActive ? 1.0 : 0.75
+                        opacity: isActive ? 1.0 : 0.75
                         font.pixelSize: 10
                         font.letterSpacing: 0.8
                         font.capitalization: Font.SmallCaps
@@ -1028,8 +1194,8 @@ PlasmoidItem {
         height: popupLayout.implicitHeight + 28 
 
         radius: 12
-        color: "#2e3550"
-        border.color: "#7aa2f7"
+        color: root.cPanelTop
+        border.color: root.cAccent
         border.width: 2
         opacity: 0
         scale: 0.96
@@ -1063,8 +1229,8 @@ PlasmoidItem {
                     Layout.preferredHeight: 18
                     Layout.preferredWidth: popupPillText.implicitWidth + 14
                     radius: 9
-                    color: "#2a3050"
-                    border.color: "#383f5c"
+                    color: Qt.rgba(root.cFg.r, root.cFg.g, root.cFg.b, 0.06)
+                    border.color: Qt.rgba(root.cFg.r, root.cFg.g, root.cFg.b, 0.18)
                     border.width: 1
                     Text {
                         id: popupPillText
@@ -1077,7 +1243,7 @@ PlasmoidItem {
                 Text {
                     id: popupTime
                     Layout.alignment: Qt.AlignVCenter
-                    color: root.cNeonOrange
+                    color: root.cAccent
                     font.pixelSize: 12
                     font.bold: true
                 }
@@ -1119,8 +1285,8 @@ PlasmoidItem {
         height: addTaskLayout.implicitHeight + 32
         anchors.centerIn: parent
         radius: 12
-        color: "#2e3550"
-        border.color: "#7aa2f7"
+        color: root.cPanelTop
+        border.color: root.cAccent
         border.width: 2
         opacity: 0
         focus: true
@@ -1195,8 +1361,8 @@ PlasmoidItem {
         height: confirmTrackLayout.implicitHeight + 32
         anchors.centerIn: parent
         radius: 12
-        color: "#2e3550"
-        border.color: "#7aa2f7"
+        color: root.cPanelTop
+        border.color: root.cAccent
         border.width: 2
         opacity: 0
         focus: true

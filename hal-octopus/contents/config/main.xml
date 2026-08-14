@@ -18,5 +18,8 @@
       <min>250</min>
       <max>10000</max>
     </entry>
+    <entry name="accentColor" type="String">
+      <default></default>
+    </entry>
   </group>
 </kcfg>
