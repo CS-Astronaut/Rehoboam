@@ -36,6 +36,7 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, SCRIPT_DIR)
 
 import rehoboam_db  # noqa: E402
+import rehoboam_exporter  # noqa: E402
 
 CONFIG_DIR = os.path.expanduser("~/.config/rehoboam")
 CONFIG_FILE = os.path.join(CONFIG_DIR, "config")
@@ -128,22 +129,34 @@ def main():
         group, task = expand(sys.argv[2]), expand(sys.argv[3])
         subprocess.run(["timew", "start", group], check=False)
         subprocess.run(["timew", "annotate", "@1", task], check=False)
+        print("ok")
     elif cmd == "timew-switch":
         group, task = expand(sys.argv[2]), expand(sys.argv[3])
         subprocess.run(["timew", "stop"], check=False)
         subprocess.run(["timew", "start", group], check=False)
         subprocess.run(["timew", "annotate", "@1", task], check=False)
+        print("ok")
     elif cmd == "add-task":
         group, title = expand(sys.argv[2]), expand(sys.argv[3])
-        rehoboam_db.add_task(group, title)
+        print(rehoboam_db.add_task(group, title))
+        rehoboam_exporter.publish_snapshot()
+        print("ok")
     elif cmd == "task-done":
         rehoboam_db.mark_task_done(int(sys.argv[2]))
+        rehoboam_exporter.publish_snapshot()
+        print("ok")
     elif cmd == "task-delete":
         rehoboam_db.delete_task(int(sys.argv[2]))
+        rehoboam_exporter.publish_snapshot()
+        print("ok")
     elif cmd == "task-move":
         rehoboam_db.move_task(int(sys.argv[2]), expand(sys.argv[3]))
+        rehoboam_exporter.publish_snapshot()
+        print("ok")
     elif cmd == "task-rename":
         rehoboam_db.edit_task_text(int(sys.argv[2]), expand(sys.argv[3]))
+        rehoboam_exporter.publish_snapshot()
+        print("ok")
     else:
         print(f"unknown command: {cmd}", file=sys.stderr)
         return 2

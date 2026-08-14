@@ -56,6 +56,11 @@ PlasmoidItem {
     property double optimisticUntil: 0
     property int prevActiveIndex: -1
     property string pendingTrackAction: ""
+    property int actionActive: 0
+    property var prevRows: []
+    property int pendingAddId: 0
+    property int offlineStreak: 0
+    property double pendingSince: 0
 
     property real eyeCx: width / 2
     property real eyeCy: height / 2
@@ -78,20 +83,30 @@ PlasmoidItem {
         connectedSources: [root.stateCmd]
         interval: Math.max(1000, plasmoid.configuration.pollInterval * 1000)
         onNewData: function(source, data) {
+            if (root.actionActive > 0) {
+                return;
+            }
             if (data.stdout) {
                 try {
                     const st = JSON.parse(data.stdout);
                     applyState(st);
+                    root.offlineStreak = 0;
                     online = true;
                     if (st.error) {
                         root.actionError = st.error;
                         errorTimer.restart();
                     }
                 } catch (err) {
-                    online = false;
+                    root.offlineStreak++;
+                    if (root.offlineStreak >= 2) {
+                        online = false;
+                    }
                 }
             } else {
-                online = false;
+                root.offlineStreak++;
+                if (root.offlineStreak >= 2) {
+                    online = false;
+                }
             }
         }
     }
@@ -120,6 +135,14 @@ PlasmoidItem {
                 }
                 return;
             }
+            if (source.indexOf("cat ") === 0) {
+                try {
+                    applyState(JSON.parse(out));
+                } catch (e) {
+                    console.warn("rehoboam reconcile failed:", e);
+                }
+                return;
+            }
             if (data.stderr) {
                 root.actionError = data.stderr.trim();
                 errorTimer.restart();
@@ -135,13 +158,35 @@ PlasmoidItem {
                         pupilAnim.stop();
                     }
                 }
+                if (root.actionActive > 0) {
+                    root.actionActive = 0;
+                    root.pendingAddId = 0;
+                    root.pendingSince = 0;
+                    root.restoreModel(root.prevRows);
+                    root.prevRows = [];
+                    root.reconcileNow();
+                }
             } else {
                 root.actionError = "";
                 if (root.pendingTrackAction !== "") {
                     root.pendingTrackAction = "";
                 }
-                refreshState();
-                catchupTimer.restart();
+                if (root.actionActive > 0) {
+                    root.actionActive--;
+                    if (source.indexOf("add-task") !== -1 && root.pendingAddId !== 0) {
+                        const firstLine = out.split("\n")[0].trim();
+                        const parsed = parseInt(firstLine, 10);
+                        if (!isNaN(parsed) && parsed > 0) {
+                            root.patchRowId(root.pendingAddId, parsed);
+                            root.pendingAddId = 0;
+                        }
+                    }
+                    if (root.actionActive === 0) {
+                        root.prevRows = [];
+                    }
+                } else {
+                    root.reconcileNow();
+                }
             }
         }
     }
@@ -150,19 +195,71 @@ PlasmoidItem {
         actionSource.connectSource(cmd);
     }
 
-    function refreshState() {
-        stateSource.disconnectSource(root.stateCmd);
-        stateSource.connectSource(root.stateCmd);
+    function reconcileNow() {
+        actionSource.connectSource(root.stateCmd);
     }
 
-    Timer {
-        id: catchupTimer
-        interval: 1000
-        onTriggered: root.refreshState()
+    function rowSnapshot(i) {
+        const r = taskModel.get(i);
+        return {
+            id: r.id,
+            description: r.description,
+            group: r.group,
+            category: r.category,
+            runTime: r.runTime,
+            runSeconds: r.runSeconds,
+            isActive: r.isActive,
+            angle: r.angle,
+            nodeX: r.nodeX,
+            nodeY: r.nodeY,
+            pathLen: r.pathLen,
+            sx: r.sx, sy: r.sy, tx: r.tx, ty: r.ty,
+            c1x: r.c1x, c1y: r.c1y, c2x: r.c2x, c2y: r.c2y
+        };
     }
 
-    function runContextAction(cmd) {
+    function captureModel() {
+        const copy = [];
+        for (let i = 0; i < taskModel.count; i++) {
+            copy.push(root.rowSnapshot(i));
+        }
+        return copy;
+    }
+
+    function restoreModel(rows) {
         root.hidePopup();
+        taskModel.clear();
+        for (let i = 0; i < rows.length; i++) {
+            taskModel.append(rows[i]);
+        }
+    }
+
+    function nextProvisionalId() {
+        return -(Date.now() % 2147483600);
+    }
+
+    function patchRowId(tempId, realId) {
+        for (let i = 0; i < taskModel.count; i++) {
+            if (taskModel.get(i).id === tempId) {
+                taskModel.setProperty(i, "id", realId);
+                return;
+            }
+        }
+    }
+
+    function runMutation(cmd, taskId) {
+        root.hidePopup();
+        root.pendingSince = Date.now();
+        root.prevRows = root.captureModel();
+        root.actionActive++;
+        if (taskId !== null && taskId !== undefined) {
+            for (let i = 0; i < taskModel.count; i++) {
+                if (taskModel.get(i).id === taskId) {
+                    taskModel.remove(i);
+                    break;
+                }
+            }
+        }
         runAction("python3 " + root.helper + " " + cmd);
     }
 
@@ -199,25 +296,45 @@ PlasmoidItem {
         if (!group || !title) {
             return;
         }
+        root.pendingSince = Date.now();
         if (root.popupMode === "edit" && root.popupTask) {
             const task = root.popupTask;
-            if (group !== task.group) {
-                runAction("python3 " + root.helper + " task-move " +
-                          task.id + " " + encArg(group));
-            }
-            if (title !== task.description) {
-                runAction("python3 " + root.helper + " task-rename " +
-                          task.id + " " + encArg(title));
-            }
-            for (let i = 0; i < taskModel.count; i++) {
-                if (taskModel.get(i).id === task.id) {
-                    taskModel.setProperty(i, "description", title);
-                    taskModel.setProperty(i, "group", group);
-                    taskModel.setProperty(i, "category", "@" + group);
-                    break;
+            const groupChanged = group !== task.group;
+            const titleChanged = title !== task.description;
+            if (groupChanged || titleChanged) {
+                root.prevRows = root.captureModel();
+                root.actionActive += (groupChanged ? 1 : 0) + (titleChanged ? 1 : 0);
+                if (groupChanged) {
+                    runAction("python3 " + root.helper + " task-move " +
+                              task.id + " " + encArg(group));
+                }
+                if (titleChanged) {
+                    runAction("python3 " + root.helper + " task-rename " +
+                              task.id + " " + encArg(title));
+                }
+                for (let i = 0; i < taskModel.count; i++) {
+                    if (taskModel.get(i).id === task.id) {
+                        taskModel.setProperty(i, "description", title);
+                        taskModel.setProperty(i, "group", group);
+                        taskModel.setProperty(i, "category", "@" + group);
+                        break;
+                    }
                 }
             }
         } else {
+            root.prevRows = root.captureModel();
+            root.actionActive++;
+            const t = {
+                id: root.nextProvisionalId(),
+                description: title,
+                group: group,
+                category: "@" + group,
+                run_time: "0 min",
+                run_seconds: 0,
+                is_active: false
+            };
+            taskModel.append(root.makeTaskRow(t, taskModel.count, taskModel.count + 1));
+            root.pendingAddId = taskModel.get(taskModel.count - 1).id;
             runAction("python3 " + root.helper + " add-task " +
                       encArg(group) + " " + encArg(title));
         }
@@ -258,6 +375,7 @@ PlasmoidItem {
             return;
         }
         root.cancelTrack();
+        root.pendingSince = Date.now();
         root.prevActiveIndex = root.activeIndex;
         root.optimisticUntil = Date.now() + 4000;
         if (p.action === "stop") {
@@ -281,7 +399,6 @@ PlasmoidItem {
             runAction("python3 " + root.helper + " timew-start " +
                       encArg(p.group) + " " + encArg(p.description));
         }
-        catchupTimer.restart();
     }
 
     function cancelTrack() {
@@ -354,68 +471,139 @@ PlasmoidItem {
         };
     }
 
+    function layoutGeometry(i, n) {
+        const radius = Math.min(root.width / 2 - root.nodeW / 2, root.height / 2 - root.nodeH / 2) - 34;
+        const ang = -90 + i * 360 / Math.max(n, 1);
+        const rad = radians(ang);
+        const nx = Math.cos(rad) * radius;
+        const ny = Math.sin(rad) * radius;
+        const g = armGeometry(nx, ny);
+        return {
+            angle: ang, nodeX: nx, nodeY: ny,
+            pathLen: cubicLen(g.sx, g.sy, g.c1x, g.c1y, g.c2x, g.c2y, g.tx, g.ty),
+            sx: g.sx, sy: g.sy, tx: g.tx, ty: g.ty,
+            c1x: g.c1x, c1y: g.c1y, c2x: g.c2x, c2y: g.c2y
+        };
+    }
+
+    function makeTaskRow(t, i, n) {
+        const g = root.layoutGeometry(i, n);
+        return {
+            id: t.id,
+            description: t.description,
+            group: t.group,
+            category: t.category !== undefined ? t.category : "@" + t.group,
+            runTime: t.run_time !== undefined ? t.run_time : "0 min",
+            runSeconds: t.run_seconds !== undefined ? t.run_seconds : 0,
+            isActive: t.is_active === true,
+            angle: g.angle, nodeX: g.nodeX, nodeY: g.nodeY, pathLen: g.pathLen,
+            sx: g.sx, sy: g.sy, tx: g.tx, ty: g.ty,
+            c1x: g.c1x, c1y: g.c1y, c2x: g.c2x, c2y: g.c2y
+        };
+    }
+
+    function syncRow(i, row, t) {
+        const active = t.is_active === true;
+        if (row.description !== t.description || row.group !== t.group) {
+            taskModel.setProperty(i, "description", t.description);
+            taskModel.setProperty(i, "group", t.group);
+            taskModel.setProperty(i, "category", t.category);
+        }
+        if (row.runSeconds !== t.run_seconds) {
+            taskModel.setProperty(i, "runTime", t.run_time);
+            taskModel.setProperty(i, "runSeconds", t.run_seconds);
+        }
+        if (row.isActive !== active) {
+            taskModel.setProperty(i, "isActive", active);
+        }
+    }
+
+    function relayout(n) {
+        for (let i = 0; i < taskModel.count; i++) {
+            const g = root.layoutGeometry(i, n);
+            taskModel.setProperty(i, "angle", g.angle);
+            taskModel.setProperty(i, "nodeX", g.nodeX);
+            taskModel.setProperty(i, "nodeY", g.nodeY);
+            taskModel.setProperty(i, "pathLen", g.pathLen);
+            taskModel.setProperty(i, "sx", g.sx);
+            taskModel.setProperty(i, "sy", g.sy);
+            taskModel.setProperty(i, "tx", g.tx);
+            taskModel.setProperty(i, "ty", g.ty);
+            taskModel.setProperty(i, "c1x", g.c1x);
+            taskModel.setProperty(i, "c1y", g.c1y);
+            taskModel.setProperty(i, "c2x", g.c2x);
+            taskModel.setProperty(i, "c2y", g.c2y);
+        }
+    }
+
+    function syncStructure(tasks, n, out) {
+        const keep = {};
+        for (let i = 0; i < n; i++) {
+            keep[tasks[i].id] = true;
+        }
+        for (let i = taskModel.count - 1; i >= 0; i--) {
+            if (!keep[taskModel.get(i).id]) {
+                taskModel.remove(i);
+            }
+        }
+        const byId = {};
+        const found = {};
+        for (let i = 0; i < n; i++) {
+            byId[tasks[i].id] = tasks[i];
+        }
+        for (let i = 0; i < taskModel.count; i++) {
+            const row = taskModel.get(i);
+            const t = byId[row.id];
+            if (!t) {
+                continue;
+            }
+            found[row.id] = true;
+            if (t.is_active) {
+                out.active = i;
+            }
+            root.syncRow(i, row, t);
+        }
+        for (let i = 0; i < n; i++) {
+            if (!found[tasks[i].id]) {
+                if (tasks[i].is_active) {
+                    out.active = taskModel.count;
+                }
+                taskModel.append(root.makeTaskRow(tasks[i], taskModel.count, n));
+            }
+        }
+        root.relayout(n);
+    }
+
     function applyState(state) {
+        const parsedTs = Date.parse(state.timestamp);
+        if (root.pendingSince > 0 && !isNaN(parsedTs) && parsedTs < root.pendingSince) {
+            return;
+        }
+        root.pendingSince = 0;
         const tasks = state.tasks ? state.tasks : [];
         const n = tasks.length;
         let newActive = -1;
         root.tracking = state.tracking === true;
 
         const key = n + "|" + Math.round(root.width) + "|" + Math.round(root.height);
-        if (key !== root.layoutKey) {
+        if (key !== root.layoutKey || taskModel.count !== n) {
             root.layoutKey = key;
-            const radius = Math.min(root.width / 2 - root.nodeW / 2, root.height / 2 - root.nodeH / 2) - 34;
-
-            function build(i) {
-                const t = tasks[i];
-                const ang = -90 + i * 360 / Math.max(n, 1);
-                const rad = radians(ang);
-                const nx = Math.cos(rad) * radius;
-                const ny = Math.sin(rad) * radius;
-                const g = armGeometry(nx, ny);
-                if (t.is_active) {
-                    newActive = i;
-                }
-                return {
-                    id: t.id,
-                    description: t.description,
-                    group: t.group,
-                    category: t.category,
-                    runTime: t.run_time,
-                    runSeconds: t.run_seconds,
-                    isActive: t.is_active === true,
-                    angle: ang,
-                    nodeX: nx,
-                    nodeY: ny,
-                    pathLen: cubicLen(g.sx, g.sy, g.c1x, g.c1y, g.c2x, g.c2y, g.tx, g.ty),
-                    sx: g.sx, sy: g.sy, tx: g.tx, ty: g.ty,
-                    c1x: g.c1x, c1y: g.c1y, c2x: g.c2x, c2y: g.c2y
-                };
-            }
-
             root.hidePopup();
-            taskModel.clear();
-            for (let i = 0; i < n; i++) {
-                taskModel.append(build(i));
-            }
+            const out = { active: -1 };
+            root.syncStructure(tasks, n, out);
+            newActive = out.active;
         } else {
+            const byId = {};
             for (let i = 0; i < n; i++) {
-                const t = tasks[i];
-                const active = t.is_active === true;
-                if (active) {
+                byId[tasks[i].id] = tasks[i];
+                if (tasks[i].is_active) {
                     newActive = i;
                 }
-                const row = taskModel.get(i);
-                if (row.description !== t.description || row.group !== t.group) {
-                    taskModel.setProperty(i, "description", t.description);
-                    taskModel.setProperty(i, "group", t.group);
-                    taskModel.setProperty(i, "category", t.category);
-                }
-                if (row.runSeconds !== t.run_seconds) {
-                    taskModel.setProperty(i, "runTime", t.run_time);
-                    taskModel.setProperty(i, "runSeconds", t.run_seconds);
-                }
-                if (row.isActive !== active) {
-                    taskModel.setProperty(i, "isActive", active);
+            }
+            for (let i = 0; i < taskModel.count; i++) {
+                const t = byId[taskModel.get(i).id];
+                if (t) {
+                    root.syncRow(i, taskModel.get(i), t);
                 }
             }
         }
@@ -446,7 +634,7 @@ PlasmoidItem {
         if (Date.now() < root.optimisticUntil) {
             return index === root.optimisticActive;
         }
-        return snapshotActive;
+        return snapshotActive === true;
     }
 
     function showPopup(node, description, category, runTime, taskId) {
@@ -1309,15 +1497,15 @@ PlasmoidItem {
         }
         QtControls.MenuItem {
             text: i18n("Mark done")
-            onTriggered: root.runContextAction("task-done " + contextMenu.target.id)
+            onTriggered: root.runMutation("task-done " + contextMenu.target.id, contextMenu.target.id)
         }
         QtControls.MenuItem {
             text: i18n("Postpone")
-            onTriggered: root.runContextAction("task-move " + contextMenu.target.id + " " + encArg("future"))
+            onTriggered: root.runMutation("task-move " + contextMenu.target.id + " " + encArg("future"), contextMenu.target.id)
         }
         QtControls.MenuItem {
             text: i18n("Delete")
-            onTriggered: root.runContextAction("task-delete " + contextMenu.target.id)
+            onTriggered: root.runMutation("task-delete " + contextMenu.target.id, contextMenu.target.id)
         }
     }
 

@@ -227,7 +227,7 @@ def get_all_tasks() -> List[sqlite3.Row]:
 
 
 def add_task(group_name: str, description: str):
-    """Adds a task to the specified group in the DB."""
+    """Adds a task to the specified group in the DB; returns the new task id."""
     with get_db_connection() as conn:
         g = conn.execute("SELECT id FROM groups WHERE name = ?", (group_name,)).fetchone()
         if not g:
@@ -241,11 +241,12 @@ def add_task(group_name: str, description: str):
         ).fetchone()
         next_pos = (max_pos_row[0] + 1) if max_pos_row[0] is not None else 0
 
-        conn.execute(
+        cursor = conn.execute(
             "INSERT INTO tasks (group_id, description, is_done, position) VALUES (?, ?, 0, ?)",
             (group_id, description, next_pos)
         )
         conn.commit()
+        return cursor.lastrowid
 
 
 def mark_task_done(task_id: int):

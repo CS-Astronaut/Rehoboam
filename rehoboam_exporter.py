@@ -32,7 +32,7 @@ sys.path.insert(0, SCRIPT_DIR)
 import rehoboam_db  # noqa: E402
 
 CACHE_FILE = os.path.expanduser("~/.cache/rehoboam_widget.json")
-TMP_FILE = CACHE_FILE + ".tmp"
+TMP_FILE = CACHE_FILE + f".{os.getpid()}.tmp"
 LOCK_FILE = os.path.expanduser("~/.cache/rehoboam_widget.lock")
 
 POLL_SECONDS = 1.0
@@ -117,6 +117,53 @@ def read_timew_export():
     return data if isinstance(data, list) else []
 
 
+def build_snapshot(export_data=None):
+    """Assemble the widget payload from the DB and TimeWarrior, and write it.
+
+    Used by the daemon loop once per tick, and by rehoboam_config.py right
+    after a DB mutation so the widget refreshes instantly instead of waiting
+    for the next tick.
+    """
+    if export_data is None:
+        export_data = read_timew_export()
+    tasks = list(rehoboam_db.get_open_tasks())
+    hidden = rehoboam_db.get_hidden_groups()
+    if hidden:
+        tasks = [t for t in tasks if t["group_name"].strip().lower() not in hidden]
+    entry, start_local = fetch_active_interval(export_data)
+    tracking = entry is not None
+    live_seconds = 0
+    active_task_id = None
+    if entry is not None:
+        with rehoboam_db.get_db_connection() as conn:
+            active_task_id = rehoboam_db.match_task_id(conn, entry.get("annotation", ""))
+        if active_task_id is None:
+            tag = (entry.get("tags") or [None])[0]
+            active_task_id = match_task_by_group_tag(tasks, tag, entry.get("annotation", ""))
+        try:
+            start_dt = datetime.strptime(start_local, "%Y-%m-%d %H:%M:%S")
+            live_seconds = max(int((datetime.now() - start_dt).total_seconds()), 0)
+        except Exception:
+            pass
+    today_durs = rehoboam_db.get_durations_for_date(datetime.now().strftime("%Y-%m-%d"))
+    if active_task_id is not None:
+        today_durs[active_task_id] = today_durs.get(active_task_id, 0) + live_seconds
+    payload = build_payload(tasks, active_task_id, today_durs, tracking)
+    atomic_write(payload)
+    return payload
+
+
+def publish_snapshot():
+    """Write a fresh payload outside the daemon loop (config.py calls this).
+
+    Failures are swallowed — the daemon's next tick heals the payload anyway.
+    """
+    try:
+        build_snapshot()
+    except Exception:
+        pass
+
+
 def main():
     os.makedirs(os.path.dirname(CACHE_FILE), exist_ok=True)
     rehoboam_db.init_db()
@@ -149,19 +196,9 @@ def main():
                     time.sleep(POLL_SECONDS)
                     continue
             error = None
-            active_task_id = None
-            live_seconds = 0
-            tasks = []
-            today_durs = {}
-            tracking = False
             try:
-                tasks = list(rehoboam_db.get_open_tasks())
-                hidden = rehoboam_db.get_hidden_groups()
-                if hidden:
-                    tasks = [t for t in tasks if t["group_name"].strip().lower() not in hidden]
                 export_data = read_timew_export()
                 entry, start_local = fetch_active_interval(export_data)
-                tracking = entry is not None
                 if entry is None:
                     if last_active_start is not None:
                         rehoboam_db.import_timew_entries(":day")
@@ -169,29 +206,12 @@ def main():
                 elif start_local != last_active_start:
                     rehoboam_db.import_timew_entries(":day")
                     last_active_start = start_local
-                try:
-                    start_dt = datetime.strptime(start_local, "%Y-%m-%d %H:%M:%S")
-                    live_seconds = max(int((datetime.now() - start_dt).total_seconds()), 0)
-                except Exception:
-                    live_seconds = 0
-                if entry is not None:
-                    with rehoboam_db.get_db_connection() as conn:
-                        active_task_id = rehoboam_db.match_task_id(conn, entry.get("annotation", ""))
-                    if active_task_id is None:
-                        tag = (entry.get("tags") or [None])[0]
-                        active_task_id = match_task_by_group_tag(tasks, tag, entry.get("annotation", ""))
                 if tick % IMPORT_EVERY_TICKS == 0:
                     rehoboam_db.import_timew_entries(":day")
-                today_durs = rehoboam_db.get_durations_for_date(datetime.now().strftime("%Y-%m-%d"))
-                if active_task_id is not None:
-                    today_durs[active_task_id] = today_durs.get(active_task_id, 0) + live_seconds
+                build_snapshot(export_data)
             except Exception as exc:  # keep the widget alive on any failure
                 error = str(exc)
-                tasks = []
-                active_task_id = None
-
-            payload = build_payload(tasks, active_task_id, today_durs, tracking, error=error)
-            atomic_write(payload)
+                atomic_write(build_payload([], None, {}, False, error=error))
             time.sleep(POLL_SECONDS)
     except KeyboardInterrupt:
         pass
