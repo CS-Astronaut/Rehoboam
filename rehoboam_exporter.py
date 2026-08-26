@@ -14,7 +14,8 @@ live elapsed time — one subprocess per tick instead of two.
 
 Each tick also enforces the dead-man switch: open tasks whose newest activity
 (creation, tracking end, or manual move/rename) is older than POSTPONE_HOURS
-are moved to the 'future' group and reported on stdout.
+are flagged as postponed (is_postponed=1) while preserving their original
+group tag, and reported on stdout.
 
 Run manually, or via ~/.config/autostart/rehoboam-exporter.desktop or a
 systemd user unit:
@@ -56,7 +57,7 @@ def format_run_time(seconds: int) -> str:
 
 
 def fetch_active_interval(export_data):
-    """Returns (entry, start_local_str) for the open interval, or (None, None)."""
+    """Returns (entry, start_utc_str) for the open interval, or (None, None)."""
     for entry in export_data:
         if not entry.get("end"):
             start = rehoboam_db._parse_timew_ts(entry.get("start", ""))
@@ -64,26 +65,12 @@ def fetch_active_interval(export_data):
     return None, None
 
 
-def match_task_by_group_tag(tasks, tag, annotation):
-    """Fallback matcher: group_name must equal the timew tag, description fuzzy."""
-    ann = (annotation or "").strip().lower()
-    candidates = [t for t in tasks if t["group_name"].strip().lower() == (tag or "").strip().lower()]
-    if ann:
-        for t in candidates:
-            desc = (t["description"] or "").strip().lower()
-            if desc and (ann in desc or desc in ann):
-                return t["id"]
-    if len(candidates) == 1:
-        return candidates[0]["id"]
-    return None
-
-
 def compute_lifelines(tasks, baselines, active_task_id, postpone_hours, lifeline_minutes):
     """Returns {task_id: (ratio, '3h 20m')} for the time left before auto-postpone.
 
     Remaining time is quantized down to lifeline_minutes steps so the widget's
     lifeline ticks calmly instead of draining every second; the tracked task is
-    always full (baseline = now). Tasks already in 'future' report 0 (empty
+    always full (baseline = now). Postponed tasks report 0 (empty
     line) so their cards stay visually consistent.
     """
     total = max(float(postpone_hours), 0.0) * 3600.0
@@ -93,13 +80,13 @@ def compute_lifelines(tasks, baselines, active_task_id, postpone_hours, lifeline
     if total <= 0:
         return life
     for t in tasks:
-        in_future = t["group_name"].strip().lower() == "future"
+        is_postponed = bool(t["is_postponed"])
         base = baselines.get(t["id"])
         elapsed = max(now - base, 0.0) if base is not None else 0.0
         if t["id"] == active_task_id:
             elapsed = 0.0
         remaining = min(max(total - elapsed, 0.0), total)
-        if in_future or remaining <= 0:
+        if is_postponed or remaining <= 0:
             life[t["id"]] = (0.0, "0m")
             continue
         quantized_elapsed = float(int(elapsed // step) * step)
@@ -119,6 +106,7 @@ def build_payload(tasks, active_task_id, today_durs, tracking, error=None, life=
             "description": t["description"],
             "group": t["group_name"],
             "category": "@" + t["group_name"],
+            "is_postponed": bool(t["is_postponed"]),
             "run_seconds": seconds,
             "run_time": format_run_time(seconds),
             "is_active": is_active,
@@ -166,27 +154,25 @@ def build_snapshot(export_data=None):
     """
     if export_data is None:
         export_data = read_timew_export()
-    tasks = list(rehoboam_db.get_open_tasks())
+    tasks = list(rehoboam_db.get_all_tasks())
     hidden = rehoboam_db.get_hidden_groups()
     if hidden:
         tasks = [t for t in tasks if t["group_name"].strip().lower() not in hidden]
-    entry, start_local = fetch_active_interval(export_data)
+    entry, start_utc = fetch_active_interval(export_data)
     tracking = entry is not None
     live_seconds = 0
     active_task_id = None
     if entry is not None:
         with rehoboam_db.get_db_connection() as conn:
-            active_task_id = rehoboam_db.match_task_id(conn, entry.get("annotation", ""))
-        if active_task_id is None:
-            tag = (entry.get("tags") or [None])[0]
-            active_task_id = match_task_by_group_tag(tasks, tag, entry.get("annotation", ""))
+            tags = entry.get("tags", [])
+            active_task_id = rehoboam_db.match_task_id(conn, entry.get("annotation", ""), tags)
         try:
-            start_dt = datetime.strptime(start_local, "%Y-%m-%d %H:%M:%S")
-            live_seconds = max(int((datetime.now() - start_dt).total_seconds()), 0)
+            start_dt = datetime.strptime(start_utc, "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
+            live_seconds = max(int((datetime.now(timezone.utc) - start_dt).total_seconds()), 0)
         except Exception:
             pass
 
-    # Dead-man switch: sweep stale open tasks into 'future' before rendering.
+    # Dead-man switch: flag stale open tasks as postponed before rendering.
     settings = rehoboam_db.get_board_settings()
     if settings["postpone_hours"] > 0:
         try:
@@ -197,7 +183,7 @@ def build_snapshot(export_data=None):
         if moved:
             for task_id in moved:
                 print(f"dead-man switch: postponed task #{task_id}", flush=True)
-            tasks = list(rehoboam_db.get_open_tasks())
+            tasks = list(rehoboam_db.get_all_tasks())
             if hidden:
                 tasks = [t for t in tasks if t["group_name"].strip().lower() not in hidden]
 
@@ -266,14 +252,14 @@ def main():
             error = None
             try:
                 export_data = read_timew_export()
-                entry, start_local = fetch_active_interval(export_data)
+                entry, start_utc = fetch_active_interval(export_data)
                 if entry is None:
                     if last_active_start is not None:
                         rehoboam_db.import_timew_entries(":day")
                         last_active_start = None
-                elif start_local != last_active_start:
+                elif start_utc != last_active_start:
                     rehoboam_db.import_timew_entries(":day")
-                    last_active_start = start_local
+                    last_active_start = start_utc
                 if tick % IMPORT_EVERY_TICKS == 0:
                     rehoboam_db.import_timew_entries(":day")
                 build_snapshot(export_data)

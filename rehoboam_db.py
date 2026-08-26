@@ -39,7 +39,7 @@ load_env_config()
 
 DB_PATH = os.getenv("REHOBOAM_DB_PATH", os.path.expanduser("~/.config/rehoboam/rehoboam.db"))
 
-DEFAULT_GROUPS = ("todo", "other", "future")
+DEFAULT_GROUPS = ("todo", "other")
 
 
 def get_db_connection() -> sqlite3.Connection:
@@ -62,48 +62,26 @@ def init_db():
     if _INITIALIZED:
         return
     with get_db_connection() as conn:
-        conn.executescript("""
-            CREATE TABLE IF NOT EXISTS groups (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                name TEXT UNIQUE NOT NULL,
-                position INTEGER NOT NULL DEFAULT 0
-            );
-
-            CREATE TABLE IF NOT EXISTS tasks (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                group_id INTEGER NOT NULL,
-                description TEXT NOT NULL,
-                is_done INTEGER NOT NULL DEFAULT 0,
-                position INTEGER NOT NULL DEFAULT 0,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (group_id) REFERENCES groups(id) ON DELETE CASCADE
-            );
-
-            CREATE TABLE IF NOT EXISTS time_entries (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                task_id INTEGER,
-                timew_id TEXT,
-                start TIMESTAMP NOT NULL,
-                end TIMESTAMP NOT NULL,
-                duration_seconds INTEGER NOT NULL,
-                UNIQUE (start, end),
-                FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE SET NULL
-            );
-
-            CREATE INDEX IF NOT EXISTS idx_time_entries_start ON time_entries(start);
-            CREATE INDEX IF NOT EXISTS idx_time_entries_task ON time_entries(task_id);
-        """)
-
-        # Migrate: older schema used timew_id (positional, unstable) as the unique key,
-        # which duplicates rows when timew renumbers ids. Derived data — safe to rebuild.
-        existing = conn.execute(
-            "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'time_entries'"
-        ).fetchone()
-        if existing and "timew_id TEXT UNIQUE NOT NULL" in existing[0]:
-            conn.execute("DROP TABLE time_entries")
-            conn.execute("""
-                CREATE TABLE time_entries (
+        user_version = conn.execute("PRAGMA user_version").fetchone()[0]
+        if user_version == 0:
+            conn.executescript("""
+                CREATE TABLE IF NOT EXISTS groups (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name TEXT UNIQUE NOT NULL,
+                    position INTEGER NOT NULL DEFAULT 0
+                );
+                CREATE TABLE IF NOT EXISTS tasks (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    group_id INTEGER NOT NULL,
+                    description TEXT NOT NULL,
+                    is_done INTEGER NOT NULL DEFAULT 0,
+                    is_postponed INTEGER NOT NULL DEFAULT 0,
+                    position INTEGER NOT NULL DEFAULT 0,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (group_id) REFERENCES groups(id) ON DELETE CASCADE
+                );
+                CREATE TABLE IF NOT EXISTS time_entries (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     task_id INTEGER,
                     timew_id TEXT,
@@ -112,10 +90,107 @@ def init_db():
                     duration_seconds INTEGER NOT NULL,
                     UNIQUE (start, end),
                     FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE SET NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_time_entries_start ON time_entries(start);
+                CREATE INDEX IF NOT EXISTS idx_time_entries_task ON time_entries(task_id);
+            """)
+
+            existing = conn.execute("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'time_entries'").fetchone()
+            if existing and "timew_id TEXT UNIQUE NOT NULL" in existing[0]:
+                conn.execute("DROP TABLE time_entries")
+                conn.execute("""
+                    CREATE TABLE time_entries (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        task_id INTEGER,
+                        timew_id TEXT,
+                        start TIMESTAMP NOT NULL,
+                        end TIMESTAMP NOT NULL,
+                        duration_seconds INTEGER NOT NULL,
+                        UNIQUE (start, end),
+                        FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE SET NULL
+                    )
+                """)
+                conn.execute("CREATE INDEX idx_time_entries_start ON time_entries(start);")
+                conn.execute("CREATE INDEX idx_time_entries_task ON time_entries(task_id);")
+
+            cols = {r[1] for r in conn.execute("PRAGMA table_info(tasks)").fetchall()}
+            if "is_postponed" not in cols:
+                conn.execute("ALTER TABLE tasks ADD COLUMN is_postponed INTEGER NOT NULL DEFAULT 0")
+                future_group = conn.execute("SELECT id FROM groups WHERE LOWER(name) = 'future'").fetchone()
+                if future_group:
+                    conn.execute("UPDATE tasks SET is_postponed = 1 WHERE group_id = ? AND is_done = 0", (future_group["id"],))
+
+            conn.execute("PRAGMA user_version = 1")
+            conn.commit()
+            user_version = 1
+
+    if user_version == 1:
+        conn = get_db_connection()
+        conn.execute("PRAGMA foreign_keys = OFF")
+        try:
+            # Migrate time_entries to UTC and merge overlaps (UNIQUE start)
+            rows = conn.execute("SELECT id, task_id, start, end, duration_seconds FROM time_entries").fetchall()
+            
+            conn.execute("DROP TABLE time_entries")
+            conn.execute("""
+                CREATE TABLE time_entries (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    task_id INTEGER,
+                    start TIMESTAMP NOT NULL UNIQUE,
+                    end TIMESTAMP NOT NULL,
+                    duration_seconds INTEGER NOT NULL,
+                    FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE SET NULL
                 )
             """)
+            processed_entries = {}
+            for r in rows:
+                try:
+                    start_utc = datetime.strptime(r["start"], "%Y-%m-%d %H:%M:%S").astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+                    end_utc = datetime.strptime(r["end"], "%Y-%m-%d %H:%M:%S").astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+                except Exception:
+                    start_utc = r["start"]
+                    end_utc = r["end"]
+                
+                dur = r["duration_seconds"]
+                if start_utc not in processed_entries or processed_entries[start_utc]["dur"] < dur:
+                    processed_entries[start_utc] = {
+                        "id": r["id"], "task_id": r["task_id"], "end": end_utc, "dur": dur
+                    }
+
+            for start_utc, d in processed_entries.items():
+                conn.execute(
+                    "INSERT INTO time_entries (id, task_id, start, end, duration_seconds) VALUES (?, ?, ?, ?, ?)",
+                    (d["id"], d["task_id"], start_utc, d["end"], d["dur"])
+                )
             conn.execute("CREATE INDEX idx_time_entries_start ON time_entries(start);")
             conn.execute("CREATE INDEX idx_time_entries_task ON time_entries(task_id);")
+
+            # Rebuild groups (NOCASE)
+            conn.executescript("""
+                CREATE TABLE groups_new (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name TEXT UNIQUE COLLATE NOCASE NOT NULL,
+                    position INTEGER NOT NULL DEFAULT 0
+                );
+                INSERT INTO groups_new SELECT id, name, position FROM groups;
+                DROP TABLE groups;
+                ALTER TABLE groups_new RENAME TO groups;
+            """)
+
+            # Fix task positions (grouped by group_id)
+            tasks = conn.execute("SELECT id, group_id FROM tasks ORDER BY group_id, position, id").fetchall()
+            pos_map = {}
+            for t in tasks:
+                gid = t["group_id"]
+                pos = pos_map.get(gid, 0)
+                conn.execute("UPDATE tasks SET position = ? WHERE id = ?", (pos, t["id"]))
+                pos_map[gid] = pos + 1
+
+            conn.execute("PRAGMA user_version = 2")
+            conn.commit()
+            user_version = 2
+        finally:
+            conn.close()
 
     ensure_default_groups()
     _INITIALIZED = True
@@ -199,8 +274,8 @@ _BOARD_SETTING_DEFAULTS = {"postpone_hours": 24.0, "lifeline_minutes": 5}
 def get_board_settings() -> Dict[str, float]:
     """Returns dead-man-switch settings from ~/.config/rehoboam/config.
 
-    POSTPONE_HOURS — hours without activity before an open task auto-moves to
-    the 'future' group (default 24, 0 disables). LIFELINE_MINUTES — refresh
+    POSTPONE_HOURS — hours without activity before an open task is auto-flagged
+    as postponed (default 24, 0 disables). LIFELINE_MINUTES — refresh
     step of the widget lifeline in minutes (default 5). Cached by file mtime
     like get_hidden_groups(); unknown or invalid values fall back to defaults.
     """
@@ -251,7 +326,7 @@ def get_all_groups() -> List[sqlite3.Row]:
 
 def get_open_tasks() -> List[sqlite3.Row]:
     """
-    Returns open (is_done=0) tasks from non-'done' groups with group names attached.
+    Returns active (is_done=0, is_postponed=0) tasks with group names attached.
     """
     init_db()
     with get_db_connection() as conn:
@@ -259,14 +334,14 @@ def get_open_tasks() -> List[sqlite3.Row]:
             SELECT t.*, g.name as group_name
             FROM tasks t
             JOIN groups g ON t.group_id = g.id
-            WHERE t.is_done = 0 AND LOWER(g.name) != 'done'
+            WHERE t.is_done = 0 AND t.is_postponed = 0
             ORDER BY g.position ASC, t.position ASC, t.id ASC
         """).fetchall()
 
 
 def get_all_tasks() -> List[sqlite3.Row]:
     """
-    Returns all tasks from non-'done' groups with group names attached.
+    Returns all non-done tasks (including postponed) with group names attached.
     """
     init_db()
     with get_db_connection() as conn:
@@ -274,7 +349,7 @@ def get_all_tasks() -> List[sqlite3.Row]:
             SELECT t.*, g.name as group_name
             FROM tasks t
             JOIN groups g ON t.group_id = g.id
-            WHERE LOWER(g.name) != 'done'
+            WHERE t.is_done = 0
             ORDER BY g.position ASC, t.position ASC, t.id ASC
         """).fetchall()
 
@@ -304,21 +379,12 @@ def add_task(group_name: str, description: str):
 
 def mark_task_done(task_id: int):
     """
-    Moves a task to the 'done' group in SQLite DB (creating 'done' group if needed).
+    Marks a task as done (preserves original group_id as the task's tag).
     """
     with get_db_connection() as conn:
-        done_group = conn.execute(
-            "SELECT id FROM groups WHERE LOWER(name) = 'done'"
-        ).fetchone()
-        if not done_group:
-            cursor = conn.execute("INSERT INTO groups (name, position) VALUES ('done', 9999)")
-            done_group_id = cursor.lastrowid
-        else:
-            done_group_id = done_group["id"]
-
         conn.execute(
-            "UPDATE tasks SET group_id = ?, is_done = 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-            (done_group_id, task_id)
+            "UPDATE tasks SET is_done = 1, is_postponed = 0, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+            (task_id,)
         )
         conn.commit()
 
@@ -349,18 +415,26 @@ def edit_task_text(task_id: int, new_text: str):
 
 
 def move_task(task_id: int, new_group_name: str):
-    """Moves a task to the specified group (creating the group if needed)."""
+    """Moves a task to the specified group (creating the group if needed).
+    Also clears the postponed flag (rescuing a postponed task)."""
     with get_db_connection() as conn:
         g = conn.execute("SELECT id FROM groups WHERE name = ?", (new_group_name,)).fetchone()
         if not g:
-            cursor = conn.execute("INSERT INTO groups (name) VALUES (?)", (new_group_name,))
+            max_gpos = conn.execute("SELECT MAX(position) FROM groups").fetchone()[0]
+            next_gpos = (max_gpos + 1) if max_gpos is not None else 0
+            cursor = conn.execute("INSERT INTO groups (name, position) VALUES (?, ?)", (new_group_name, next_gpos))
             new_group_id = cursor.lastrowid
         else:
             new_group_id = g["id"]
 
+        max_pos_row = conn.execute(
+            "SELECT MAX(position) FROM tasks WHERE group_id = ?", (new_group_id,)
+        ).fetchone()
+        next_pos = (max_pos_row[0] + 1) if max_pos_row[0] is not None else 0
+
         conn.execute(
-            "UPDATE tasks SET group_id = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-            (new_group_id, task_id)
+            "UPDATE tasks SET group_id = ?, position = ?, is_postponed = 0, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+            (new_group_id, next_pos, task_id)
         )
         conn.commit()
 
@@ -386,6 +460,41 @@ def delete_group(group_id: int):
         conn.commit()
 
 
+def unpostpone_task(task_id: int):
+    """Clears the postponed flag on a task (rescuing it back to active).
+    Refreshes updated_at so the dead-man switch countdown restarts."""
+    with get_db_connection() as conn:
+        conn.execute(
+            "UPDATE tasks SET is_postponed = 0, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+            (task_id,)
+        )
+        conn.commit()
+
+
+def postpone_task(task_id: int):
+    """Manually marks a single task as postponed (preserves original group_id).
+    Refreshes updated_at."""
+    with get_db_connection() as conn:
+        conn.execute(
+            "UPDATE tasks SET is_postponed = 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+            (task_id,)
+        )
+        conn.commit()
+
+
+def get_postponed_tasks() -> List[sqlite3.Row]:
+    """Returns postponed (is_postponed=1, is_done=0) tasks with group names."""
+    init_db()
+    with get_db_connection() as conn:
+        return conn.execute("""
+            SELECT t.*, g.name as group_name
+            FROM tasks t
+            JOIN groups g ON t.group_id = g.id
+            WHERE t.is_done = 0 AND t.is_postponed = 1
+            ORDER BY g.position ASC, t.position ASC, t.id ASC
+        """).fetchall()
+
+
 # ===========================================================================
 # Dead-Man Switch (auto-postpone)
 # ===========================================================================
@@ -394,9 +503,7 @@ def get_task_activity() -> Dict[int, float]:
     """Returns {task_id: baseline_epoch} for open tasks: the newest of creation,
     last update (move/rename) and last tracked-interval end.
 
-    tasks.created_at / updated_at come from SQLite CURRENT_TIMESTAMP and are
-    UTC, while time_entries timestamps are local strings — both are normalized
-    to local epochs here so they can be compared safely.
+    All timestamps (created_at, updated_at, last_end) are UTC strings.
     """
     init_db()
     out: Dict[int, float] = {}
@@ -411,13 +518,11 @@ def get_task_activity() -> Dict[int, float]:
         """).fetchall()
     for r in rows:
         stamps = []
-        for raw, is_utc in ((r["created_at"], True), (r["updated_at"], True), (r["last_end"], False)):
+        for raw in (r["created_at"], r["updated_at"], r["last_end"]):
             if not raw:
                 continue
             try:
-                dt = datetime.strptime(str(raw), "%Y-%m-%d %H:%M:%S")
-                if is_utc:
-                    dt = dt.replace(tzinfo=timezone.utc).astimezone()
+                dt = datetime.strptime(str(raw), "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
                 stamps.append(dt.timestamp())
             except ValueError:
                 continue
@@ -427,13 +532,13 @@ def get_task_activity() -> Dict[int, float]:
 
 
 def postpone_stale_tasks(max_hours: float, active_task_id: Optional[int] = None) -> List[int]:
-    """Dead-man switch: moves stale open tasks into the 'future' group.
+    """Dead-man switch: marks stale open tasks as postponed.
 
     A task is stale when now - baseline exceeds max_hours hours (baseline per
-    get_task_activity); the currently tracked task never goes stale. The move
-    itself refreshes updated_at, so manually rescuing a task from 'future'
-    starts a fresh countdown instead of being bounced right back. Returns the
-    moved task ids.
+    get_task_activity); the currently tracked task never goes stale. The flag
+    change refreshes updated_at, so unpostponing a task starts a fresh
+    countdown instead of being bounced right back. Returns the postponed
+    task ids.
     """
     if max_hours <= 0:
         return []
@@ -443,22 +548,17 @@ def postpone_stale_tasks(max_hours: float, active_task_id: Optional[int] = None)
     with get_db_connection() as conn:
         rows = conn.execute("""
             SELECT t.id FROM tasks t
-            JOIN groups g ON t.group_id = g.id
-            WHERE t.is_done = 0 AND LOWER(g.name) != 'future'
+            WHERE t.is_done = 0 AND t.is_postponed = 0
         """).fetchall()
         stale = [r["id"] for r in rows
                  if r["id"] != active_task_id and activity.get(r["id"], 0.0) < cutoff]
         if not stale:
             return []
-        group = conn.execute("SELECT id FROM groups WHERE name = 'future'").fetchone()
-        if not group:
-            conn.execute("INSERT INTO groups (name) VALUES ('future')")
-            group = conn.execute("SELECT id FROM groups WHERE name = 'future'").fetchone()
         placeholders = ",".join("?" * len(stale))
         conn.execute(
-            f"UPDATE tasks SET group_id = ?, updated_at = CURRENT_TIMESTAMP "
+            f"UPDATE tasks SET is_postponed = 1, updated_at = CURRENT_TIMESTAMP "
             f"WHERE id IN ({placeholders})",
-            [group["id"]] + stale
+            stale
         )
         conn.commit()
     return stale
@@ -469,32 +569,55 @@ def postpone_stale_tasks(max_hours: float, active_task_id: Optional[int] = None)
 # ===========================================================================
 
 def _parse_timew_ts(ts_str: str) -> Optional[str]:
-    """Converts TimeWarrior UTC timestamps (YYYYMMDDTHHMMSSZ) to local 'YYYY-MM-DD HH:MM:SS'."""
+    """Converts TimeWarrior UTC timestamps (YYYYMMDDTHHMMSSZ) to standard UTC 'YYYY-MM-DD HH:MM:SS'."""
     try:
-        ts = datetime.strptime(ts_str, "%Y%m%dT%H%M%SZ").replace(tzinfo=timezone.utc)
-        return ts.astimezone().strftime("%Y-%m-%d %H:%M:%S")
+        ts = datetime.strptime(ts_str, "%Y%m%dT%H%M%SZ")
+        return ts.strftime("%Y-%m-%d %H:%M:%S")
     except Exception:
         return None
 
 
-def match_task_id(conn: sqlite3.Connection, annotation: str) -> Optional[int]:
-    """Finds the single best task for a timew annotation; returns None if no match."""
+def match_task_id(conn: sqlite3.Connection, annotation: str, tags: List[str] = None) -> Optional[int]:
+    """Finds the single best task for a timew annotation/tags; returns None if no match."""
     ann = re.sub(r"\s*\{[^}]*\}\s*$", "", annotation).strip().lower()
+    
+    rows = conn.execute("SELECT t.id, LOWER(t.description) AS descr, LOWER(g.name) AS gname "
+                        "FROM tasks t JOIN groups g ON t.group_id = g.id").fetchall()
+    
+    candidates = rows
+    if tags:
+        tag_lower = [t.lower() for t in tags]
+        group_matches = [r for r in rows if r["gname"] in tag_lower]
+        if group_matches:
+            candidates = group_matches
+            
     if not ann:
+        if len(candidates) == 1:
+            return candidates[0]["id"]
         return None
-    rows = conn.execute("SELECT id, LOWER(description) AS descr FROM tasks").fetchall()
-    exact = [r for r in rows if r["descr"] == ann]
-    if exact:
-        return exact[0]["id"]
-    partial = [r for r in rows if r["descr"] and (ann in r["descr"] or r["descr"] in ann)]
-    if partial:
-        return max(partial, key=lambda r: len(r["descr"]))["id"]
+
+    def find_match(cands):
+        exact = [r for r in cands if r["descr"] == ann]
+        if exact:
+            return exact[0]["id"]
+        partial = [r for r in cands if r["descr"] and (ann in r["descr"] or r["descr"] in ann)]
+        if partial:
+            return max(partial, key=lambda r: len(r["descr"]))["id"]
+        return None
+
+    match = find_match(candidates)
+    if match is not None:
+        return match
+    
+    if candidates != rows:
+        return find_match(rows)
+        
     return None
 
 
 def import_timew_entries(range_arg: str = ":day") -> int:
     """
-    Imports TimeWarrior intervals into time_entries (idempotent via timew_id).
+    Imports TimeWarrior intervals into time_entries.
     Intervals whose annotation matches no task are stored with task_id NULL.
     Ongoing intervals (no end) are skipped until stopped. Returns rows inserted.
     """
@@ -510,11 +633,13 @@ def import_timew_entries(range_arg: str = ":day") -> int:
 
     inserted = 0
     with get_db_connection() as conn:
+        processed_entries = {}
         for entry in data:
             start_str = entry.get("start")
             end_str = entry.get("end")
             ann = entry.get("annotation", "").strip()
-            if not (start_str and end_str and ann):
+            tags = entry.get("tags", [])
+            if not (start_str and end_str):
                 continue
             start = _parse_timew_ts(start_str)
             end = _parse_timew_ts(end_str)
@@ -527,11 +652,21 @@ def import_timew_entries(range_arg: str = ":day") -> int:
                 continue
             if dur <= 0:
                 continue
-            task_id = match_task_id(conn, ann)
+            
+            if start not in processed_entries or processed_entries[start]["dur"] < dur:
+                processed_entries[start] = {
+                    "end": end,
+                    "dur": dur,
+                    "ann": ann,
+                    "tags": tags
+                }
+                
+        for start, entry_data in processed_entries.items():
+            task_id = match_task_id(conn, entry_data["ann"], entry_data["tags"])
             cur = conn.execute(
-                "INSERT OR IGNORE INTO time_entries (task_id, timew_id, start, end, duration_seconds) "
-                "VALUES (?, ?, ?, ?, ?)",
-                (task_id, str(entry.get("id")), start, end, dur)
+                "INSERT OR IGNORE INTO time_entries (task_id, start, end, duration_seconds) "
+                "VALUES (?, ?, ?, ?)",
+                (task_id, start, entry_data["end"], entry_data["dur"])
             )
             if cur.rowcount > 0:
                 inserted += 1
@@ -551,9 +686,13 @@ def _get_durations_where(where: str, params: tuple) -> Dict[Optional[int], int]:
 
 def get_durations_for_date(date_str: str) -> Dict[int, int]:
     """Returns {task_id: seconds} aggregated from time_entries for the given date (YYYY-MM-DD)."""
-    start = date_str + " 00:00:00"
-    end = (datetime.strptime(date_str, "%Y-%m-%d") + timedelta(days=1)).strftime("%Y-%m-%d 00:00:00")
-    d = _get_durations_where("start >= ? AND start < ?", (start, end))
+    local_start = datetime.strptime(date_str, "%Y-%m-%d").astimezone()
+    local_end = local_start + timedelta(days=1)
+    
+    utc_start = local_start.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+    utc_end = local_end.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+    
+    d = _get_durations_where("start >= ? AND start < ?", (utc_start, utc_end))
     return {k: v for k, v in d.items() if k is not None}
 
 
@@ -616,9 +755,11 @@ def get_day_summary(date_str: Optional[str] = None) -> str:
 def get_week_summary() -> str:
     """Returns a report of tracked time for the last 7 days (including today)."""
     import_timew_entries("7days ago")
-    start = (datetime.now() - timedelta(days=6)).strftime("%Y-%m-%d")
-    durs = _get_durations_where("date(start) >= ?", (start,))
-    return _build_summary(f"Last 7 days (since {start})", durs)
+    local_start = (datetime.now().astimezone() - timedelta(days=6)).replace(hour=0, minute=0, second=0, microsecond=0)
+    utc_start = local_start.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+    durs = _get_durations_where("start >= ?", (utc_start,))
+    start_str = local_start.strftime("%Y-%m-%d")
+    return _build_summary(f"Last 7 days (since {start_str})", durs)
 
 
 def format_task_totals(task_id: int) -> str:
@@ -698,13 +839,20 @@ def get_timew_status() -> str:
         if entry.get("end"):
             continue
         head = f"Tracking {_describe_interval(entry)}"
-        start = _parse_timew_ts(entry.get("start", "")) or "?"
-        elapsed = 0
-        try:
-            elapsed = int((datetime.now() - datetime.strptime(start, "%Y-%m-%d %H:%M:%S")).total_seconds())
-        except Exception:
-            pass
-        return f"{head}\n  Started {start}\n  Elapsed {format_duration(elapsed)}"
+        start = _parse_timew_ts(entry.get("start", ""))
+        if not start:
+            start = "?"
+            elapsed = 0
+            local_start = "?"
+        else:
+            try:
+                start_dt = datetime.strptime(start, "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
+                elapsed = int((datetime.now(timezone.utc) - start_dt).total_seconds())
+                local_start = start_dt.astimezone().strftime("%Y-%m-%d %H:%M:%S")
+            except Exception:
+                elapsed = 0
+                local_start = start
+        return f"{head}\n  Started {local_start}\n  Elapsed {format_duration(elapsed)}"
     return ""
 
 
