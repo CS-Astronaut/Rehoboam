@@ -37,12 +37,12 @@ truth: a SQLite database. It wears two faces:
   octopus arms, the active task glows with live elapsed time, and the pupil
   locks onto it. Hover for details, click to track.
 - ☠️ **Dead-man switch** — tasks that go untouched (no tracking, edit, or move)
-  for `POSTPONE_HOURS` are automatically swept into the `future` group by the
-  exporter. Tracking a task restarts its countdown; rescuing it from `future`
+  for `POSTPONE_HOURS` are automatically flagged as postponed by the
+  exporter. Tracking a task restarts its countdown; unpostponing a task
   grants a fresh one. `0` disables.
 - 🩺 **Lifelines** — each card carries a thin accent-colored line showing how
   much of its dead-man countdown remains, ticking down every
-  `LIFELINE_MINUTES`. Cards in `future` show an empty line; the hover popup
+  `LIFELINE_MINUTES`. Postponed cards show an empty line; the hover popup
   spells out the remaining time.
 - 📋 **SQLite board** — groups and tasks live in a local SQLite database,
   managed from the TUI or the widget dialog.
@@ -122,8 +122,7 @@ machine-specific paths baked into the widget QML, installs the plasmoid, and
 links the commands into `~/.local/bin` (`rehoboam`, `kanban`, `timew`,
 `rehoboam-config`, `rehoboam-exporter`, `rehoboam-reload`). It then starts the
 exporter via a systemd user unit (or XDG autostart) and restarts plasmashell.
-A fresh database is seeded with the default groups `todo`, `other`, and
-`future`.
+A fresh database is seeded with the default groups `todo` and `other`.
 
 ```bash
 ./install.sh --prefix DIR         # custom install prefix
@@ -182,8 +181,8 @@ rewrites it atomically.
 > [!TIP]
 > `POSTPONE_HOURS` and `LIFELINE_MINUTES` drive the dead-man switch and the card
 > lifelines. A task's countdown baseline is its newest activity: creation, last
-> finished tracking interval, or last manual move/rename — so rescuing a task
-> from `future` starts a fresh countdown. Both keys are editable in the widget's
+> finished tracking interval, or last manual move/rename — so unpostponing a task
+> starts a fresh countdown. Both keys are editable in the widget's
 > *Configure → Widget* page.
 
 ## CLI / TUI usage
@@ -242,16 +241,15 @@ timew annotate @1 "fix bug"     # annotation = the task description
   (pick an existing group or type a new one, auto-created) and a title field.
   The new node appears within ~1 s.
 - **Right-click menu** — right-click a node for *Edit…* (rename the task and/or
-  move it to another group via the same popup as Add task), *Mark done* (moves
-  it to the `done` group), *Postpone* (moves it to the `future` group), or
-  *Delete*. Changes land within ~1 s.
+  move it to another group via the same popup as Add task), *Mark done*,
+  *Postpone* (flags the task as postponed), or *Delete*. Changes land within ~1 s.
 - **Hover popup** — after `hoverDelay` ms, a card shows category, run time, task
   `#id`, description, and (when the dead-man switch is on) how long until it is
   postponed.
 - **Lifelines & dead-man switch** — every card shows a thin accent-colored line
   at its bottom edge: the fraction of `POSTPONE_HOURS` still left before the
-  exporter auto-postpones the task, refreshed every `LIFELINE_MINUTES`. Cards
-  already in `future` show an empty line. The currently tracked task is always
+  exporter auto-postpones the task, refreshed every `LIFELINE_MINUTES`. Postponed
+  cards show an empty line. The currently tracked task is always
   full.
 - **Calm at rest** — idle, the eye is still: no spinning reticle, breathing halo,
   or wandering pupil, and no glows on the task cards. Colors follow the KDE
@@ -319,7 +317,9 @@ rehoboam-config timew-config KEY VALUE  # timew config KEY VALUE
 rehoboam-config timew-start GROUP TASK  # timew start + annotate @1
 rehoboam-config timew-switch GROUP TASK # stop current, then start + annotate
 rehoboam-config add-task GROUP TITLE    # add a task to the board (DB)
-rehoboam-config task-done ID            # mark task done (moves to 'done' group)
+rehoboam-config task-done ID            # mark task done
+rehoboam-config task-postpone ID        # flag task as postponed
+rehoboam-config task-unpostpone ID      # clear postponed flag
 rehoboam-config task-delete ID          # delete a task
 rehoboam-config task-move ID GROUP      # move a task to another group
 ```
@@ -339,16 +339,14 @@ rehoboam-config task-move ID GROUP      # move a task to another group
 ## Database schema
 
 ```sql
-groups        (id, name UNIQUE, position)
+groups        (id, name UNIQUE COLLATE NOCASE, position)
 tasks         (id, group_id FK→groups ON DELETE CASCADE, description,
-               is_done, position, created_at, updated_at)
-time_entries  (id, task_id FK→tasks ON DELETE SET NULL, timew_id,
-               start, end, duration_seconds, UNIQUE(start, end))
+               is_done, is_postponed, position, created_at, updated_at)
+time_entries  (id, task_id FK→tasks ON DELETE SET NULL,
+               start UNIQUE, end, duration_seconds)
 ```
 
-`init_db()` also migrates the legacy `time_entries` schema (positional
-`timew_id UNIQUE` → `UNIQUE(start, end)`), dropping derived data and rebuilding
-it.
+`init_db()` implements versioned migrations for data hardening (e.g. strict UTC timestamps, deduplication, and case-insensitivity).
 
 ## Repository layout
 

@@ -1,4 +1,4 @@
-# Database Audit — REHOBOAM storage layer
+qq# Database Audit — REHOBOAM storage layer
 
 **Scope:** how tasks/groups/time-entries are stored and updated across
 `rehoboam_db.py` and its callers (TUI via `common.sh`, widget helper via
@@ -57,6 +57,11 @@ Live evidence — 24 collision stacks:
 **Fix:** assign the target group's next position on move/done + one-time
 resequence migration for existing rows.
 
+> **Note (post-refactor):** the `[done]` and `[future]` collision stacks above
+> are legacy artifacts — `mark_task_done` and `postpone_stale_tasks` no longer
+> change `group_id`.  `move_task` still changes `group_id` (for deliberate
+> re-tagging) and inherits this position bug.
+
 ### 3. Overlapping / split intervals double-count tracked time
 
 Dedup relies solely on `UNIQUE(start, end)`
@@ -73,17 +78,19 @@ The task-38 pair shares the *same start* — a TimeWarrior midnight split that
 **Fix:** merge same-start fragments at import time, and/or exclude contained /
 duplicate-start rows during report aggregation (`_get_durations_where`).
 
-### 4. "Done" state is dual-truth
+### 4. ~~"Done" state is dual-truth~~ ✅ RESOLVED
 
-Doneness is expressed twice: `is_done = 1` **and** membership of the `done`
+~~Doneness is expressed twice: `is_done = 1` **and** membership of the `done`
 group (`mark_task_done`, rehoboam_db.py:305). Every writer must keep both in
 sync; a single future writer updating one side makes a task invisible to every
-query (`get_open_tasks` filters on both).
+query (`get_open_tasks` filters on both).~~
 
-Status: currently consistent (probe found zero violations) — latent trap only.
-
-**Fix:** derive doneness from group membership alone, or enforce the invariant
-in one central write path.
+**Resolution:** `mark_task_done()` now sets `is_done = 1` without touching
+`group_id` — the original group is preserved as the task's tag.  Similarly,
+`postpone_stale_tasks()` sets `is_postponed = 1` instead of moving tasks to
+the `future` group.  Queries filter on flags only (`is_done`, `is_postponed`),
+not group names.  The `done` and `future` groups are no longer special
+destinations — they may still exist as legacy data from before the migration.
 
 ### 5. Group names unique only case-sensitively
 
@@ -163,8 +170,14 @@ if the board grows ~100×:
 
 ## Recommended scope
 
-One coherent **storage-hardening pass**: **#7 (versioned migrations) first**,
-then **#1 (timestamp standardization), #2 (position assignment), #3 (interval
-overlap merge), #8 (drop `timew_id` / fix docstring)**, optionally **#5
-(NOCASE group names)**. #4 and #6 change behavior and deserve separate
-discussion before implementation.
+One coherent **storage-hardening pass**: **✅ RESOLVED** — all issues have been addressed in a single migration pass (schema version 2).
+
+> **Schema change log:**
+> - `user_version` is now explicitly versioned (currently v2).
+> - `tasks.is_postponed INTEGER NOT NULL DEFAULT 0` — added. Postponed tasks no longer change groups.
+> - `groups.name` is now `COLLATE NOCASE`.
+> - `time_entries` timestamps are now strict UTC.
+> - `time_entries` dropped the unused `timew_id` column.
+> - `time_entries` uses `UNIQUE(start)` to prevent double-counting of midnight splits.
+> - Position collisions on `move_task` are fixed.
+> - Interval matching now incorporates the TimeWarrior group tag as the primary matcher.
