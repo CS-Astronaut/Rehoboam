@@ -135,6 +135,7 @@ patch_widget() {
     if [ -f "$PREFIX/hal-octopus/icon.png" ]; then
         mkdir -p "$HOME/.local/share/icons/hicolor/256x256/apps"
         cp "$PREFIX/hal-octopus/icon.png" "$HOME/.local/share/icons/hicolor/256x256/apps/$PLASMOID_ID.png"
+        command -v kbuildsycoca6 >/dev/null 2>&1 && kbuildsycoca6 >/dev/null 2>&1 || true
     fi
     echo "  [INFO] plasmoid installed to $PLASMOID_DIR"
 }
