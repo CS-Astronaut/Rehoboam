@@ -36,6 +36,14 @@ truth: a SQLite database. It wears two faces:
 - 🐙 **HAL-Octopus widget** — live task eye: open tasks orbit as nodes on
   octopus arms, the active task glows with live elapsed time, and the pupil
   locks onto it. Hover for details, click to track.
+- ☠️ **Dead-man switch** — tasks that go untouched (no tracking, edit, or move)
+  for `POSTPONE_HOURS` are automatically swept into the `future` group by the
+  exporter. Tracking a task restarts its countdown; rescuing it from `future`
+  grants a fresh one. `0` disables.
+- 🩺 **Lifelines** — each card carries a thin accent-colored line showing how
+  much of its dead-man countdown remains, ticking down every
+  `LIFELINE_MINUTES`. Cards in `future` show an empty line; the hover popup
+  spells out the remaining time.
 - 📋 **SQLite board** — groups and tasks live in a local SQLite database,
   managed from the TUI or the widget dialog.
 - ⏱️ **TimeWarrior integration** — start, stop, switch, and cancel tracking from
@@ -163,11 +171,20 @@ rewrites it atomically.
 |---|---|---|
 | `REHOBOAM_DB_PATH` | `~/.config/rehoboam/rehoboam.db` | `rehoboam_db.py` |
 | `HIDDEN_GROUPS` | *(unset)* | `rehoboam_exporter.py` |
+| `POSTPONE_HOURS` | `24` (0 = off) | `rehoboam_exporter.py` |
+| `LIFELINE_MINUTES` | `5` | `rehoboam_exporter.py` |
 
 > [!TIP]
 > Set `HIDDEN_GROUPS` to a comma-separated list of group names to hide from the
 > octopus eye. It's re-read every tick and affects display only — tracking and
 > the TUI are unaffected. Group names containing commas are not supported.
+
+> [!TIP]
+> `POSTPONE_HOURS` and `LIFELINE_MINUTES` drive the dead-man switch and the card
+> lifelines. A task's countdown baseline is its newest activity: creation, last
+> finished tracking interval, or last manual move/rename — so rescuing a task
+> from `future` starts a fresh countdown. Both keys are editable in the widget's
+> *Configure → Widget* page.
 
 ## CLI / TUI usage
 
@@ -229,7 +246,13 @@ timew annotate @1 "fix bug"     # annotation = the task description
   it to the `done` group), *Postpone* (moves it to the `future` group), or
   *Delete*. Changes land within ~1 s.
 - **Hover popup** — after `hoverDelay` ms, a card shows category, run time, task
-  `#id`, and description.
+  `#id`, description, and (when the dead-man switch is on) how long until it is
+  postponed.
+- **Lifelines & dead-man switch** — every card shows a thin accent-colored line
+  at its bottom edge: the fraction of `POSTPONE_HOURS` still left before the
+  exporter auto-postpones the task, refreshed every `LIFELINE_MINUTES`. Cards
+  already in `future` show an empty line. The currently tracked task is always
+  full.
 - **Calm at rest** — idle, the eye is still: no spinning reticle, breathing halo,
   or wandering pupil, and no glows on the task cards. Colors follow the KDE
   theme and system accent (`accentColor` overrides it); when tracking, the eye
@@ -246,6 +269,8 @@ timew annotate @1 "fix bug"     # annotation = the task description
 {
   "timestamp": "2026-08-04T00:35:07",
   "active_task_id": 25,
+  "tracking": true,
+  "postpone_hours": 24,
   "tasks": [
     {
       "id": 25,
@@ -254,11 +279,16 @@ timew annotate @1 "fix bug"     # annotation = the task description
       "category": "@todo",
       "run_seconds": 3725,
       "run_time": "1h 2m",
-      "is_active": true
+      "is_active": true,
+      "life_ratio": 0.87,
+      "life_time": "20h 55m"
     }
   ]
 }
 ```
+
+`postpone_hours` is `0` when the dead-man switch is off; then `life_*` fields
+are omitted.
 
 If a tick fails, an `error` field replaces `tasks`; the widget stays alive and
 shows the problem (plus an `OFFLINE` label when the snapshot isn't reachable).
@@ -270,7 +300,9 @@ shows the problem (plus an `OFFLINE` label when the snapshot isn't reachable).
 - **TimeWarrior** — start tracking from live group/task dropdowns, stop /
   continue, and tune `maxtracking`, `verbose`, and `confirmation`.
 - **Widget** — `stateFile`, `pollInterval` (s), `hoverDelay` (ms), `accentColor`
-  (`#RRGGBB`, empty = system accent).
+  (`#RRGGBB`, empty = system accent), plus the dead-man switch
+  (`POSTPONE_HOURS`, hours, 0 = off) and the lifeline refresh step
+  (`LIFELINE_MINUTES`).
 
 ## `rehoboam_config.py`
 
@@ -323,7 +355,7 @@ it.
 ```txt
 rehoboam/
 ├── hal-octopus/                    # Plasma 6 widget (org.rehoboam.hal-octopus)
-│   ├── metadata.json               # v1.2, GPL-2.0-or-later
+│   ├── metadata.json               # v1.5, GPL-2.0-or-later
 │   └── contents/
 │       ├── config/
 │       │   ├── main.xml            # KConfigSkeleton: stateFile, pollInterval, hoverDelay

@@ -12,6 +12,10 @@ Active interval detection mirrors rehoboam_db.get_timew_current_description()
 `timew export :day` call, which also yields the start timestamp needed for
 live elapsed time — one subprocess per tick instead of two.
 
+Each tick also enforces the dead-man switch: open tasks whose newest activity
+(creation, tracking end, or manual move/rename) is older than POSTPONE_HOURS
+are moved to the 'future' group and reported on stdout.
+
 Run manually, or via ~/.config/autostart/rehoboam-exporter.desktop or a
 systemd user unit:
 
@@ -74,12 +78,43 @@ def match_task_by_group_tag(tasks, tag, annotation):
     return None
 
 
-def build_payload(tasks, active_task_id, today_durs, tracking, error=None):
+def compute_lifelines(tasks, baselines, active_task_id, postpone_hours, lifeline_minutes):
+    """Returns {task_id: (ratio, '3h 20m')} for the time left before auto-postpone.
+
+    Remaining time is quantized down to lifeline_minutes steps so the widget's
+    lifeline ticks calmly instead of draining every second; the tracked task is
+    always full (baseline = now). Tasks already in 'future' report 0 (empty
+    line) so their cards stay visually consistent.
+    """
+    total = max(float(postpone_hours), 0.0) * 3600.0
+    step = max(int(lifeline_minutes), 1) * 60.0
+    now = datetime.now().timestamp()
+    life = {}
+    if total <= 0:
+        return life
+    for t in tasks:
+        in_future = t["group_name"].strip().lower() == "future"
+        base = baselines.get(t["id"])
+        elapsed = max(now - base, 0.0) if base is not None else 0.0
+        if t["id"] == active_task_id:
+            elapsed = 0.0
+        remaining = min(max(total - elapsed, 0.0), total)
+        if in_future or remaining <= 0:
+            life[t["id"]] = (0.0, "0m")
+            continue
+        quantized_elapsed = float(int(elapsed // step) * step)
+        q_remaining = min(max(total - quantized_elapsed, 0.0), total)
+        life[t["id"]] = (q_remaining / total, format_run_time(int(q_remaining)))
+    return life
+
+
+def build_payload(tasks, active_task_id, today_durs, tracking, error=None, life=None):
+    """life: None (feature off) or {'postpone_hours': h, 'life': {id: (ratio, txt)}}."""
     entries = []
     for t in tasks:
         seconds = int(today_durs.get(t["id"], 0))
         is_active = t["id"] == active_task_id
-        entries.append({
+        entry = {
             "id": t["id"],
             "description": t["description"],
             "group": t["group_name"],
@@ -87,16 +122,21 @@ def build_payload(tasks, active_task_id, today_durs, tracking, error=None):
             "run_seconds": seconds,
             "run_time": format_run_time(seconds),
             "is_active": is_active,
-        })
+        }
+        if life is not None:
+            ratio, life_time = life["life"].get(t["id"], (0.0, "0m"))
+            entry["life_ratio"] = round(ratio, 4)
+            entry["life_time"] = life_time
+        entries.append(entry)
     payload = {
         "timestamp": datetime.now().isoformat(timespec="seconds"),
         "active_task_id": active_task_id,
         "tracking": tracking,
-        "error": error,
+        "postpone_hours": life["postpone_hours"] if life else 0,
         "tasks": entries,
     }
-    if error is None:
-        payload.pop("error")
+    if error is not None:
+        payload["error"] = error
     return payload
 
 
@@ -145,10 +185,38 @@ def build_snapshot(export_data=None):
             live_seconds = max(int((datetime.now() - start_dt).total_seconds()), 0)
         except Exception:
             pass
+
+    # Dead-man switch: sweep stale open tasks into 'future' before rendering.
+    settings = rehoboam_db.get_board_settings()
+    if settings["postpone_hours"] > 0:
+        try:
+            moved = rehoboam_db.postpone_stale_tasks(
+                settings["postpone_hours"], active_task_id=active_task_id)
+        except Exception:
+            moved = []
+        if moved:
+            for task_id in moved:
+                print(f"dead-man switch: postponed task #{task_id}", flush=True)
+            tasks = list(rehoboam_db.get_open_tasks())
+            if hidden:
+                tasks = [t for t in tasks if t["group_name"].strip().lower() not in hidden]
+
     today_durs = rehoboam_db.get_durations_for_date(datetime.now().strftime("%Y-%m-%d"))
     if active_task_id is not None:
         today_durs[active_task_id] = today_durs.get(active_task_id, 0) + live_seconds
-    payload = build_payload(tasks, active_task_id, today_durs, tracking)
+    life = None
+    if settings["postpone_hours"] > 0:
+        try:
+            baselines = rehoboam_db.get_task_activity()
+        except Exception:
+            baselines = {}
+        life = {
+            "postpone_hours": settings["postpone_hours"],
+            "life": compute_lifelines(tasks, baselines, active_task_id,
+                                      settings["postpone_hours"],
+                                      settings["lifeline_minutes"]),
+        }
+    payload = build_payload(tasks, active_task_id, today_durs, tracking, life=life)
     atomic_write(payload)
     return payload
 

@@ -189,6 +189,59 @@ def get_hidden_groups() -> set:
     return hidden
 
 
+_BOARD_SETTINGS_CACHE = None  # (config mtime, dict) — avoids re-parsing on every exporter tick
+
+# Normalized defaults; raw keys parsed from ~/.config/rehoboam/config:
+#   POSTPONE_HOURS -> 'postpone_hours', LIFELINE_MINUTES -> 'lifeline_minutes'
+_BOARD_SETTING_DEFAULTS = {"postpone_hours": 24.0, "lifeline_minutes": 5}
+
+
+def get_board_settings() -> Dict[str, float]:
+    """Returns dead-man-switch settings from ~/.config/rehoboam/config.
+
+    POSTPONE_HOURS — hours without activity before an open task auto-moves to
+    the 'future' group (default 24, 0 disables). LIFELINE_MINUTES — refresh
+    step of the widget lifeline in minutes (default 5). Cached by file mtime
+    like get_hidden_groups(); unknown or invalid values fall back to defaults.
+    """
+    global _BOARD_SETTINGS_CACHE
+    path = os.path.expanduser("~/.config/rehoboam/config")
+    try:
+        mtime = os.path.getmtime(path)
+    except OSError:
+        return dict(_BOARD_SETTING_DEFAULTS)
+    if _BOARD_SETTINGS_CACHE is not None and _BOARD_SETTINGS_CACHE[0] == mtime:
+        return dict(_BOARD_SETTINGS_CACHE[1])
+    values: Dict[str, float] = {}
+    try:
+        with open(path, encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                key, _, value = line.partition("=")
+                key = key.strip()
+                if key not in ("POSTPONE_HOURS", "LIFELINE_MINUTES"):
+                    continue
+                value = value.strip()
+                if len(value) >= 2 and value[0] in "'\"" and value[-1] == value[0]:
+                    value = value[1:-1]
+                try:
+                    values[key] = float(value)
+                except ValueError:
+                    pass
+    except OSError:
+        values = {}
+    settings = {
+        "postpone_hours": max(values.get("POSTPONE_HOURS",
+                                         _BOARD_SETTING_DEFAULTS["postpone_hours"]), 0.0),
+        "lifeline_minutes": max(int(values.get("LIFELINE_MINUTES",
+                                               _BOARD_SETTING_DEFAULTS["lifeline_minutes"])), 1),
+    }
+    _BOARD_SETTINGS_CACHE = (mtime, dict(settings))
+    return settings
+
+
 def get_all_groups() -> List[sqlite3.Row]:
     """Returns all groups including 'done'."""
     init_db()
@@ -331,6 +384,84 @@ def delete_group(group_id: int):
     with get_db_connection() as conn:
         conn.execute("DELETE FROM groups WHERE id = ?", (group_id,))
         conn.commit()
+
+
+# ===========================================================================
+# Dead-Man Switch (auto-postpone)
+# ===========================================================================
+
+def get_task_activity() -> Dict[int, float]:
+    """Returns {task_id: baseline_epoch} for open tasks: the newest of creation,
+    last update (move/rename) and last tracked-interval end.
+
+    tasks.created_at / updated_at come from SQLite CURRENT_TIMESTAMP and are
+    UTC, while time_entries timestamps are local strings — both are normalized
+    to local epochs here so they can be compared safely.
+    """
+    init_db()
+    out: Dict[int, float] = {}
+    with get_db_connection() as conn:
+        rows = conn.execute("""
+            SELECT t.id AS id, t.created_at AS created_at,
+                   t.updated_at AS updated_at, MAX(te.end) AS last_end
+            FROM tasks t
+            LEFT JOIN time_entries te ON te.task_id = t.id
+            WHERE t.is_done = 0
+            GROUP BY t.id
+        """).fetchall()
+    for r in rows:
+        stamps = []
+        for raw, is_utc in ((r["created_at"], True), (r["updated_at"], True), (r["last_end"], False)):
+            if not raw:
+                continue
+            try:
+                dt = datetime.strptime(str(raw), "%Y-%m-%d %H:%M:%S")
+                if is_utc:
+                    dt = dt.replace(tzinfo=timezone.utc).astimezone()
+                stamps.append(dt.timestamp())
+            except ValueError:
+                continue
+        if stamps:
+            out[r["id"]] = max(stamps)
+    return out
+
+
+def postpone_stale_tasks(max_hours: float, active_task_id: Optional[int] = None) -> List[int]:
+    """Dead-man switch: moves stale open tasks into the 'future' group.
+
+    A task is stale when now - baseline exceeds max_hours hours (baseline per
+    get_task_activity); the currently tracked task never goes stale. The move
+    itself refreshes updated_at, so manually rescuing a task from 'future'
+    starts a fresh countdown instead of being bounced right back. Returns the
+    moved task ids.
+    """
+    if max_hours <= 0:
+        return []
+    init_db()
+    activity = get_task_activity()
+    cutoff = datetime.now().timestamp() - max_hours * 3600
+    with get_db_connection() as conn:
+        rows = conn.execute("""
+            SELECT t.id FROM tasks t
+            JOIN groups g ON t.group_id = g.id
+            WHERE t.is_done = 0 AND LOWER(g.name) != 'future'
+        """).fetchall()
+        stale = [r["id"] for r in rows
+                 if r["id"] != active_task_id and activity.get(r["id"], 0.0) < cutoff]
+        if not stale:
+            return []
+        group = conn.execute("SELECT id FROM groups WHERE name = 'future'").fetchone()
+        if not group:
+            conn.execute("INSERT INTO groups (name) VALUES ('future')")
+            group = conn.execute("SELECT id FROM groups WHERE name = 'future'").fetchone()
+        placeholders = ",".join("?" * len(stale))
+        conn.execute(
+            f"UPDATE tasks SET group_id = ?, updated_at = CURRENT_TIMESTAMP "
+            f"WHERE id IN ({placeholders})",
+            [group["id"]] + stale
+        )
+        conn.commit()
+    return stale
 
 
 # ===========================================================================

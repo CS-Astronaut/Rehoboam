@@ -61,6 +61,7 @@ PlasmoidItem {
     property int pendingAddId: 0
     property int offlineStreak: 0
     property double pendingSince: 0
+    property real postponeHours: 0
 
     property real eyeCx: width / 2
     property real eyeCy: height / 2
@@ -209,6 +210,8 @@ PlasmoidItem {
             runTime: r.runTime,
             runSeconds: r.runSeconds,
             isActive: r.isActive,
+            lifeRatio: r.lifeRatio,
+            lifeTime: r.lifeTime,
             angle: r.angle,
             nodeX: r.nodeX,
             nodeY: r.nodeY,
@@ -331,7 +334,9 @@ PlasmoidItem {
                 category: "@" + group,
                 run_time: "0 min",
                 run_seconds: 0,
-                is_active: false
+                is_active: false,
+                life_ratio: 1,
+                life_time: ""
             };
             taskModel.append(root.makeTaskRow(t, taskModel.count, taskModel.count + 1));
             root.pendingAddId = taskModel.get(taskModel.count - 1).id;
@@ -496,6 +501,8 @@ PlasmoidItem {
             runTime: t.run_time !== undefined ? t.run_time : "0 min",
             runSeconds: t.run_seconds !== undefined ? t.run_seconds : 0,
             isActive: t.is_active === true,
+            lifeRatio: t.life_ratio !== undefined ? t.life_ratio : -1,
+            lifeTime: t.life_time !== undefined ? t.life_time : "",
             angle: g.angle, nodeX: g.nodeX, nodeY: g.nodeY, pathLen: g.pathLen,
             sx: g.sx, sy: g.sy, tx: g.tx, ty: g.ty,
             c1x: g.c1x, c1y: g.c1y, c2x: g.c2x, c2y: g.c2y
@@ -515,6 +522,13 @@ PlasmoidItem {
         }
         if (row.isActive !== active) {
             taskModel.setProperty(i, "isActive", active);
+        }
+        const lifeR = t.life_ratio !== undefined ? t.life_ratio : -1;
+        const lifeT = t.life_time !== undefined ? t.life_time : "";
+        if (row.lifeRatio === undefined || Math.abs(row.lifeRatio - lifeR) > 0.0005
+                || row.lifeTime !== lifeT) {
+            taskModel.setProperty(i, "lifeRatio", lifeR);
+            taskModel.setProperty(i, "lifeTime", lifeT);
         }
     }
 
@@ -584,6 +598,7 @@ PlasmoidItem {
         const n = tasks.length;
         let newActive = -1;
         root.tracking = state.tracking === true;
+        root.postponeHours = typeof state.postpone_hours === "number" ? state.postpone_hours : 0;
 
         const key = n + "|" + Math.round(root.width) + "|" + Math.round(root.height);
         if (key !== root.layoutKey || taskModel.count !== n) {
@@ -637,13 +652,18 @@ PlasmoidItem {
         return snapshotActive === true;
     }
 
-    function showPopup(node, description, category, runTime, taskId) {
+    function showPopup(node, description, category, runTime, taskId, lifeTime) {
         hoverPopup.anchorNode = node;
         popupPillText.text = category;
         popupPillText.color = categoryColor(category);
         popupTime.text = runTime;
         popupId.text = "#" + taskId;
         popupDesc.text = description;
+        const hasLife = root.postponeHours > 0 && typeof lifeTime === "string" && lifeTime !== "";
+        popupLife.visible = hasLife;
+        if (hasLife) {
+            popupLife.text = i18n("Postpones in %1", lifeTime);
+        }
         hoverPopup.visible = true;
         hoverPopup.opacity = 1;
     }
@@ -1166,7 +1186,7 @@ PlasmoidItem {
                 Timer {
                     id: hoverTimer
                     interval: Math.max(250, plasmoid.configuration.hoverDelay)
-                    onTriggered: root.showPopup(node, model.description, model.category, model.runTime, model.id)
+                    onTriggered: root.showPopup(node, model.description, model.category, model.runTime, model.id, model.lifeTime)
                 }
                 onEntered: hoverTimer.start()
                 onExited: {
@@ -1242,6 +1262,36 @@ PlasmoidItem {
                     lineHeight: 1.15
                     Layout.fillWidth: true
                     Layout.fillHeight: true
+                }
+            }
+
+            Item {
+                id: lifeline
+                z: 4
+                visible: root.postponeHours > 0 && model.lifeRatio >= 0
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.bottom: parent.bottom
+                anchors.leftMargin: 12
+                anchors.rightMargin: 12
+                anchors.bottomMargin: 8
+                height: 3
+
+                Rectangle {
+                    anchors.fill: parent
+                    radius: 1.5
+                    color: Qt.rgba(root.cFg.r, root.cFg.g, root.cFg.b, 0.10)
+                }
+                Rectangle {
+                    anchors.top: parent.top
+                    anchors.bottom: parent.bottom
+                    anchors.left: parent.left
+                    radius: 1.5
+                    color: root.cAccent
+                    width: parent.width * Math.max(0, Math.min(1, model.lifeRatio))
+                    Behavior on width {
+                        NumberAnimation { duration: 600; easing.type: Easing.OutQuad }
+                    }
                 }
             }
         }
@@ -1342,6 +1392,14 @@ PlasmoidItem {
                 font.pixelSize: 12
                 wrapMode: Text.Wrap
                 lineHeight: 1.25
+            }
+
+            Text {
+                id: popupLife
+                width: parent.width
+                visible: false
+                color: root.cDim
+                font.pixelSize: 11
             }
         }
     }
