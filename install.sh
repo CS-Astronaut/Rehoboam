@@ -115,8 +115,6 @@ patch_widget() {
     local -a targets=(
         "$PREFIX/hal-octopus/contents/ui/main.qml"
         "$PREFIX/hal-octopus/contents/ui/configGeneral.qml"
-        "$PREFIX/hal-octopus/contents/ui/configKanban.qml"
-        "$PREFIX/hal-octopus/contents/ui/configTimew.qml"
         "$PREFIX/hal-octopus/contents/config/main.xml"
     )
     for f in "${targets[@]}"; do
@@ -132,6 +130,12 @@ patch_widget() {
     mkdir -p "$(dirname "$PLASMOID_DIR")"
     cp -a "$PREFIX/hal-octopus" "$PLASMOID_DIR"
     ln -sf "$PREFIX/rehoboam_config.py" "$PLASMOID_DIR/rehoboam_config.py"
+    
+    # Install the widget icon to the user's icon theme so Plasma can find it
+    if [ -f "$PREFIX/hal-octopus/icon.png" ]; then
+        mkdir -p "$HOME/.local/share/icons/hicolor/256x256/apps"
+        cp "$PREFIX/hal-octopus/icon.png" "$HOME/.local/share/icons/hicolor/256x256/apps/$PLASMOID_ID.png"
+    fi
     echo "  [INFO] plasmoid installed to $PLASMOID_DIR"
 }
 
@@ -284,6 +288,7 @@ uninstall() {
         esac
     done
     rm -rf "$PLASMOID_DIR"
+    rm -f "$HOME/.local/share/icons/hicolor/256x256/apps/$PLASMOID_ID.png"
     if [ -n "$installed" ]; then
         rm -rf "$installed"
     fi
