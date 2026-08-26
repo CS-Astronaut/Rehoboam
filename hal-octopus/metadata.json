@@ -9,7 +9,7 @@
         "Category": "Utilities",
         "Description": "Octopus-armed task board with a HAL 9000 eye, driven by the Rehoboam task suite.",
         "EnabledByDefault": true,
-        "Icon": "timer",
+        "Icon": "org.rehoboam.hal-octopus",
         "Id": "org.rehoboam.hal-octopus",
         "License": "GPL-2.0-or-later",
         "Name": "HAL-Octopus",

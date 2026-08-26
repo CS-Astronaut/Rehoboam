@@ -126,8 +126,6 @@ patch_widget() {
     if command -v qmllint >/dev/null 2>&1; then
         qmllint -I /usr/lib/qt6/qml "$PREFIX/hal-octopus/contents/ui/main.qml" \
             "$PREFIX/hal-octopus/contents/ui/configGeneral.qml" \
-            "$PREFIX/hal-octopus/contents/ui/configKanban.qml" \
-            "$PREFIX/hal-octopus/contents/ui/configTimew.qml" \
             || echo "  [WARN] qmllint flagged issues in the installed QML — continuing"
     fi
     rm -rf "$PLASMOID_DIR"
