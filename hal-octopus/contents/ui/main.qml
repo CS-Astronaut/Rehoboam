@@ -43,6 +43,22 @@ PlasmoidItem {
     function encArg(s) {
         return encodeURIComponent(s).replace(/[!'()*~]/g, c => "%" + c.charCodeAt(0).toString(16).toUpperCase());
     }
+
+    Connections {
+        target: plasmoid.configuration
+        function onPostponeHoursChanged() {
+            root.runMutation("set POSTPONE_HOURS " + plasmoid.configuration.postponeHours, null);
+        }
+        function onLifeStepChanged() {
+            root.runMutation("set LIFELINE_MINUTES " + plasmoid.configuration.lifeStep, null);
+        }
+        function onHiddenGroupsChanged() {
+            root.runMutation("set HIDDEN_GROUPS " + encArg(plasmoid.configuration.hiddenGroups), null);
+        }
+        function onMaxtrackingChanged() {
+            root.runMutation("timew-config maxtracking " + plasmoid.configuration.maxtracking, null);
+        }
+    }
     property var taskModel: ListModel {}
     property int activeIndex: -1
     property bool tracking: false

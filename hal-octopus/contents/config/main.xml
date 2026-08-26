@@ -21,5 +21,23 @@
     <entry name="accentColor" type="String">
       <default></default>
     </entry>
+    <entry name="postponeHours" type="int">
+      <default>24</default>
+      <min>0</min>
+      <max>720</max>
+    </entry>
+    <entry name="lifeStep" type="int">
+      <default>5</default>
+      <min>1</min>
+      <max>60</max>
+    </entry>
+    <entry name="hiddenGroups" type="String">
+      <default></default>
+    </entry>
+    <entry name="maxtracking" type="int">
+      <default>0</default>
+      <min>0</min>
+      <max>1440</max>
+    </entry>
   </group>
 </kcfg>
