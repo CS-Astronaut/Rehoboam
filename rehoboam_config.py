@@ -16,7 +16,9 @@ Subcommands (all values URL-encoded where noted):
   timew-start GROUP TASK     timew start GROUP + timew annotate @1 TASK (both URL-encoded)
   timew-switch GROUP TASK    stop current tracking (if any), then timew-start (both URL-encoded)
   add-task GROUP TITLE       add a task to GROUP in the rehoboam DB (both URL-encoded)
-  task-done ID               mark task ID done (moves it to the 'done' group)
+  task-done ID               mark task ID as done (sets is_done flag, preserves group)
+  task-postpone ID           manually postpone task ID (sets is_postponed flag, preserves group)
+  task-unpostpone ID         clear postponed flag on task ID (rescue back to active)
   task-delete ID             delete task ID
   task-move ID GROUP         move task ID to GROUP (URL-encoded, created if missing)
   task-rename ID TITLE       rename task ID to TITLE (URL-encoded)
@@ -143,6 +145,14 @@ def main():
         print("ok")
     elif cmd == "task-done":
         rehoboam_db.mark_task_done(int(sys.argv[2]))
+        rehoboam_exporter.publish_snapshot()
+        print("ok")
+    elif cmd == "task-postpone":
+        rehoboam_db.postpone_task(int(sys.argv[2]))
+        rehoboam_exporter.publish_snapshot()
+        print("ok")
+    elif cmd == "task-unpostpone":
+        rehoboam_db.unpostpone_task(int(sys.argv[2]))
         rehoboam_exporter.publish_snapshot()
         print("ok")
     elif cmd == "task-delete":

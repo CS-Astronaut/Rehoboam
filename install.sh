@@ -148,7 +148,7 @@ rehoboam_db.startup_sync()
 PYEOF
 )" || status=1
     if [ "$status" -eq 0 ]; then
-        echo "  [OK] schema ready; default groups ensured: todo, other, future"
+        echo "  [OK] schema ready; default groups ensured: todo, other"
     else
         echo "  [WARN] DB init failed — the exporter/TUI will retry on first run:" >&2
         printf '%s\n' "$out" | sed 's/^/         /' >&2

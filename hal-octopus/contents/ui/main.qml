@@ -207,6 +207,7 @@ PlasmoidItem {
             description: r.description,
             group: r.group,
             category: r.category,
+            isPostponed: r.isPostponed,
             runTime: r.runTime,
             runSeconds: r.runSeconds,
             isActive: r.isActive,
@@ -332,6 +333,7 @@ PlasmoidItem {
                 description: title,
                 group: group,
                 category: "@" + group,
+                is_postponed: false,
                 run_time: "0 min",
                 run_seconds: 0,
                 is_active: false,
@@ -498,6 +500,7 @@ PlasmoidItem {
             description: t.description,
             group: t.group,
             category: t.category !== undefined ? t.category : "@" + t.group,
+            isPostponed: t.is_postponed === true,
             runTime: t.run_time !== undefined ? t.run_time : "0 min",
             runSeconds: t.run_seconds !== undefined ? t.run_seconds : 0,
             isActive: t.is_active === true,
@@ -511,10 +514,14 @@ PlasmoidItem {
 
     function syncRow(i, row, t) {
         const active = t.is_active === true;
+        const postponed = t.is_postponed === true;
         if (row.description !== t.description || row.group !== t.group) {
             taskModel.setProperty(i, "description", t.description);
             taskModel.setProperty(i, "group", t.group);
             taskModel.setProperty(i, "category", t.category);
+        }
+        if (row.isPostponed !== postponed) {
+            taskModel.setProperty(i, "isPostponed", postponed);
         }
         if (row.runSeconds !== t.run_seconds) {
             taskModel.setProperty(i, "runTime", t.run_time);
@@ -1558,8 +1565,14 @@ PlasmoidItem {
             onTriggered: root.runMutation("task-done " + contextMenu.target.id, contextMenu.target.id)
         }
         QtControls.MenuItem {
-            text: i18n("Postpone")
-            onTriggered: root.runMutation("task-move " + contextMenu.target.id + " " + encArg("future"), contextMenu.target.id)
+            text: contextMenu.target && contextMenu.target.isPostponed ? i18n("Unpostpone") : i18n("Postpone")
+            onTriggered: {
+                if (contextMenu.target && contextMenu.target.isPostponed) {
+                    root.runMutation("task-unpostpone " + contextMenu.target.id, null);
+                } else {
+                    root.runMutation("task-postpone " + contextMenu.target.id, contextMenu.target.id);
+                }
+            }
         }
         QtControls.MenuItem {
             text: i18n("Delete")

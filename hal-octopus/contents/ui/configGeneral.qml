@@ -158,7 +158,7 @@ KCM.SimpleKCM {
             font.bold: true
         }
         QtControls.Label {
-            text: i18n("Open tasks untouched for this long — no tracking, edit or move — are moved to the 'future' group. Tracking a task restarts the countdown; rescuing it from 'future' grants a fresh one.")
+            text: i18n("Open tasks untouched for this long — no tracking, edit or move — are flagged as postponed. Tracking or editing a task restarts the countdown; unpostponing grants a fresh one.")
             wrapMode: Text.Wrap
             opacity: 0.7
         }

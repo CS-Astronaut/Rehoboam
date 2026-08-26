@@ -199,6 +199,22 @@ rehoboam_db.mark_task_done(int(sys.argv[1]))
 " "$task_id"
 }
 
+unpostpone_task() {
+  local task_id="$1"
+  "$PYTHON_EXEC" -c "
+import sys, rehoboam_db
+rehoboam_db.unpostpone_task(int(sys.argv[1]))
+" "$task_id"
+}
+
+postpone_task() {
+  local task_id="$1"
+  "$PYTHON_EXEC" -c "
+import sys, rehoboam_db
+rehoboam_db.postpone_task(int(sys.argv[1]))
+" "$task_id"
+}
+
 edit_task_text() {
   local task_id="$1" newtext="$2"
   "$PYTHON_EXEC" -c "
