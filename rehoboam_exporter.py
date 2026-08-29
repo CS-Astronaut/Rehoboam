@@ -15,7 +15,10 @@ live elapsed time — one subprocess per tick instead of two.
 Each tick also enforces the dead-man switch: open tasks whose newest activity
 (creation, tracking end, or manual move/rename) is older than POSTPONE_HOURS
 are flagged as postponed (is_postponed=1) while preserving their original
-group tag, and reported on stdout.
+group tag, and reported on stdout. Postponed tasks never reach the widget
+payload (only a postponed_count badge) — they live on the kanban Postponed
+Shelf until rescued from the TUI, or until the user starts tracking one,
+which auto-rescues it with a fresh countdown.
 
 Run manually, or via ~/.config/autostart/rehoboam-exporter.desktop or a
 systemd user unit:
@@ -95,8 +98,13 @@ def compute_lifelines(tasks, baselines, active_task_id, postpone_hours, lifeline
     return life
 
 
-def build_payload(tasks, active_task_id, today_durs, tracking, error=None, life=None):
-    """life: None (feature off) or {'postpone_hours': h, 'life': {id: (ratio, txt)}}."""
+def build_payload(tasks, active_task_id, today_durs, tracking, error=None, life=None,
+                  postponed_count=0):
+    """life: None (feature off) or {'postpone_hours': h, 'life': {id: (ratio, txt)}}.
+
+    tasks must already be filtered: postponed rows stay off the eye and are
+    only reflected in the postponed_count badge on the payload.
+    """
     entries = []
     for t in tasks:
         seconds = int(today_durs.get(t["id"], 0))
@@ -121,6 +129,7 @@ def build_payload(tasks, active_task_id, today_durs, tracking, error=None, life=
         "active_task_id": active_task_id,
         "tracking": tracking,
         "postpone_hours": life["postpone_hours"] if life else 0,
+        "postponed_count": postponed_count,
         "tasks": entries,
     }
     if error is not None:
@@ -172,6 +181,21 @@ def build_snapshot(export_data=None):
         except Exception:
             pass
 
+    # Rescue: tracking a postponed task means the user chose to spend time on
+    # it — clear the flag so it returns to the eye with a fresh countdown
+    # (unpostpone_task refreshes updated_at, restarting the dead-man timer).
+    if active_task_id is not None:
+        rescued = next((t for t in tasks
+                        if t["id"] == active_task_id and t["is_postponed"]), None)
+        if rescued is not None:
+            rehoboam_db.unpostpone_task(active_task_id)
+            print(f"auto-rescue: unpostponed tracked task #{active_task_id}",
+                  flush=True)
+            tasks = list(rehoboam_db.get_all_tasks())
+            if hidden:
+                tasks = [t for t in tasks
+                         if t["group_name"].strip().lower() not in hidden]
+
     # Dead-man switch: flag stale open tasks as postponed before rendering.
     settings = rehoboam_db.get_board_settings()
     if settings["postpone_hours"] > 0:
@@ -186,6 +210,11 @@ def build_snapshot(export_data=None):
             tasks = list(rehoboam_db.get_all_tasks())
             if hidden:
                 tasks = [t for t in tasks if t["group_name"].strip().lower() not in hidden]
+
+    # Postponed tasks stay off the eye: they live on the kanban Postponed
+    # Shelf until rescued from the TUI (or auto-rescued by tracking, above).
+    postponed_count = sum(1 for t in tasks if t["is_postponed"])
+    tasks = [t for t in tasks if not t["is_postponed"]]
 
     today_durs = rehoboam_db.get_durations_for_date(datetime.now().strftime("%Y-%m-%d"))
     if active_task_id is not None:
@@ -202,7 +231,8 @@ def build_snapshot(export_data=None):
                                       settings["postpone_hours"],
                                       settings["lifeline_minutes"]),
         }
-    payload = build_payload(tasks, active_task_id, today_durs, tracking, life=life)
+    payload = build_payload(tasks, active_task_id, today_durs, tracking, life=life,
+                            postponed_count=postponed_count)
     atomic_write(payload)
     return payload
 

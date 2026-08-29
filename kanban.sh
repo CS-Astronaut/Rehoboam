@@ -162,6 +162,67 @@ edit_delete_task() {
 }
 
 # ---------------------------------------------------------------------------
+# Postponed shelf: rescue / finish / delete dead-man-switched tasks
+# ---------------------------------------------------------------------------
+postponed_shelf() {
+  print_header "KANBAN"
+  mapfile -t entries < <(get_postponed_entries)
+
+  if [ "${#entries[@]}" -eq 0 ]; then
+    show_warning "No postponed tasks."
+    return
+  fi
+
+  local -a display=() id_map=()
+  for entry in "${entries[@]}"; do
+    IFS=$'\t' read -r tid grp line <<<"$entry"
+    display+=("[${grp}] ${line#- ⏳ }")
+    id_map+=("$tid")
+  done
+  display+=("⬅  Cancel")
+  id_map+=("-1")
+
+  sel=$(printf '%s\n' "${display[@]}" | gum choose --cursor "▶ " --header "Postponed shelf — select a task")
+  [ -z "$sel" ] && return
+  [ "$sel" = "⬅  Cancel" ] && return
+
+  local target_id=""
+  for i in "${!display[@]}"; do
+    if [ "${display[$i]}" = "$sel" ]; then
+      target_id="${id_map[$i]}"
+      break
+    fi
+  done
+
+  local current_text
+  current_text=$(echo "$sel" | sed -E 's/^.+ \[[^]]+\] //')
+
+  action=$(gum choose --cursor "▶ " \
+    "♻️  Rescue (unpostpone)" \
+    "✅  Mark done" \
+    "🗑️  Delete" \
+    "⬅  Cancel" \
+    --header "Action for: ${current_text}")
+  case "$action" in
+  "♻️  Rescue (unpostpone)")
+    unpostpone_task "$target_id"
+    show_success "Task rescued back to the active board"
+    ;;
+  "✅  Mark done")
+    mark_task_done "$target_id"
+    show_success "Task marked done"
+    ;;
+  "🗑️  Delete")
+    if gum confirm "Delete this task?"; then
+      delete_task "$target_id"
+      show_error "Task deleted"
+    fi
+    ;;
+  *) return ;;
+  esac
+}
+
+# ---------------------------------------------------------------------------
 # Edit / delete group
 # ---------------------------------------------------------------------------
 edit_delete_group() {
@@ -222,6 +283,7 @@ while true; do
     "➕  Add Task" \
     "🗃️  Add Task Group" \
     "✏️  Edit / Delete Task" \
+    "⏳  Postponed Shelf" \
     "📁  Edit / Delete Group" \
     "⬅  Return to Main Menu" \
     --header "BOARD — choose an action")
@@ -231,6 +293,7 @@ while true; do
   "➕  Add Task") add_task ;;
   "🗃️  Add Task Group") add_group ;;
   "✏️  Edit / Delete Task") edit_delete_task ;;
+  "⏳  Postponed Shelf") postponed_shelf ;;
   "📁  Edit / Delete Group") edit_delete_group ;;
   "⬅  Return to Main Menu" | "") exit 0 ;;
   esac

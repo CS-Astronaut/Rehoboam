@@ -179,7 +179,16 @@ get_task_entries() {
 import rehoboam_db
 for t in rehoboam_db.get_all_tasks():
     chk = '[x]' if t['is_done'] else '[ ]'
-    print(f\"{t['id']}\t{t['group_name']}\t- {chk} {t['description']}\")
+    flag = '⏳ ' if t['is_postponed'] else ''
+    print(f\"{t['id']}\t{t['group_name']}\t- {chk} {flag}{t['description']}\")
+"
+}
+
+get_postponed_entries() {
+  "$PYTHON_EXEC" -c "
+import rehoboam_db
+for t in rehoboam_db.get_postponed_tasks():
+    print(f\"{t['id']}\t{t['group_name']}\t- ⏳ {t['description']}\")
 "
 }
 

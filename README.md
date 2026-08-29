@@ -38,12 +38,13 @@ truth: a SQLite database. It wears two faces:
   locks onto it. Hover for details, click to track.
 - ☠️ **Dead-man switch** — tasks that go untouched (no tracking, edit, or move)
   for `POSTPONE_HOURS` are automatically flagged as postponed by the
-  exporter. Tracking a task restarts its countdown; unpostponing a task
-  grants a fresh one. `0` disables.
+  exporter and leave the widget eye — they wait on the kanban *Postponed
+  Shelf* until rescued from the TUI. Spending time on one brings it back:
+  tracking a postponed task auto-rescues it with a fresh countdown.
+  `0` disables.
 - 🩺 **Lifelines** — each card carries a thin accent-colored line showing how
   much of its dead-man countdown remains, ticking down every
-  `LIFELINE_MINUTES`. Postponed cards show an empty line; the hover popup
-  spells out the remaining time.
+  `LIFELINE_MINUTES`. The hover popup spells out the remaining time.
 - 📋 **SQLite board** — groups and tasks live in a local SQLite database,
   managed from the TUI or the widget dialog.
 - ⏱️ **TimeWarrior integration** — start, stop, switch, and cancel tracking from
@@ -242,15 +243,15 @@ timew annotate @1 "fix bug"     # annotation = the task description
   The new node appears within ~1 s.
 - **Right-click menu** — right-click a node for *Edit…* (rename the task and/or
   move it to another group via the same popup as Add task), *Mark done*,
-  *Postpone* (flags the task as postponed), or *Delete*. Changes land within ~1 s.
+  *Postpone* (flags the task as postponed — it immediately leaves the eye and
+  waits on the kanban *Postponed Shelf*), or *Delete*. Changes land within ~1 s.
 - **Hover popup** — after `hoverDelay` ms, a card shows category, run time, task
   `#id`, description, and (when the dead-man switch is on) how long until it is
   postponed.
 - **Lifelines & dead-man switch** — every card shows a thin accent-colored line
   at its bottom edge: the fraction of `POSTPONE_HOURS` still left before the
-  exporter auto-postpones the task, refreshed every `LIFELINE_MINUTES`. Postponed
-  cards show an empty line. The currently tracked task is always
-  full.
+  exporter auto-postpones the task, refreshed every `LIFELINE_MINUTES`.
+  The currently tracked task is always full.
 - **Calm at rest** — idle, the eye is still: no spinning reticle, breathing halo,
   or wandering pupil, and no glows on the task cards. Colors follow the KDE
   theme and system accent (`accentColor` overrides it); when tracking, the eye
@@ -269,6 +270,7 @@ timew annotate @1 "fix bug"     # annotation = the task description
   "active_task_id": 25,
   "tracking": true,
   "postpone_hours": 24,
+  "postponed_count": 2,
   "tasks": [
     {
       "id": 25,
@@ -286,7 +288,10 @@ timew annotate @1 "fix bug"     # annotation = the task description
 ```
 
 `postpone_hours` is `0` when the dead-man switch is off; then `life_*` fields
-are omitted.
+are omitted. `postponed_count` reports how many open tasks are currently on
+the Postponed Shelf; postponed tasks themselves never appear in `tasks` —
+they are managed in the kanban TUI and return to the payload when rescued
+or tracked.
 
 If a tick fails, an `error` field replaces `tasks`; the widget stays alive and
 shows the problem (plus an `OFFLINE` label when the snapshot isn't reachable).
