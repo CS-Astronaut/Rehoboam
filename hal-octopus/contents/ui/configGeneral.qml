@@ -3,6 +3,7 @@ import QtQuick.Controls as QtControls
 import QtQuick.Layouts as QtLayouts
 import org.kde.kcmutils as KCM
 import org.kde.kirigami as Kirigami
+import org.kde.plasma.plasma5support as Plasma5Support
 
 KCM.SimpleKCM {
     id: generalPage
@@ -13,8 +14,68 @@ KCM.SimpleKCM {
     property alias cfg_accentColor: accentField.text
     property alias cfg_postponeHours: postponeHours.value
     property alias cfg_lifeStep: lifeStep.value
-    property alias cfg_hiddenGroups: hiddenGroupsField.text
+    property string cfg_hiddenGroups: ""
     property alias cfg_maxtracking: maxtracking.value
+
+    readonly property string helperPath: Qt.resolvedUrl("../../rehoboam_config.py")
+        .toString().replace(/^file:\/\/(localhost)?/, "")
+    property var groupEntries: []
+
+    function parseHidden(str) {
+        return (str || "").split(",").map(s => s.trim()).filter(s => s !== "");
+    }
+
+    function syncCheckboxes() {
+        const values = parseHidden(cfg_hiddenGroups);
+        const hidden = values.map(s => s.toLowerCase());
+        const known = [];
+        const entries = [];
+        for (let i = 0; i < groupSource.groups.length; i++) {
+            const g = groupSource.groups[i];
+            known.push(g.toLowerCase());
+            entries.push({ name: g, checked: hidden.indexOf(g.toLowerCase()) !== -1, stale: false });
+        }
+        for (let j = 0; j < hidden.length; j++) {
+            if (known.indexOf(hidden[j]) === -1) {
+                entries.push({ name: values[j], checked: true, stale: true });
+            }
+        }
+        generalPage.groupEntries = entries;
+    }
+
+    function commitHidden() {
+        const sel = [];
+        for (let i = 0; i < groupEntries.length; i++) {
+            if (groupEntries[i].checked) sel.push(groupEntries[i].name);
+        }
+        cfg_hiddenGroups = sel.join(", ");
+    }
+
+    Plasma5Support.DataSource {
+        id: groupSource
+        engine: "executable"
+        connectedSources: []
+        property var groups: []
+        property bool failed: false
+        onNewData: function(source, data) {
+            disconnectSource(source);
+            try {
+                const board = JSON.parse(data.stdout);
+                groups = board.groups ? board.groups : [];
+                failed = false;
+            } catch (err) {
+                groups = [];
+                failed = true;
+            }
+            generalPage.syncCheckboxes();
+        }
+    }
+
+    Component.onCompleted: {
+        groupSource.connectSource("python3 " + generalPage.helperPath + " list");
+    }
+
+    onCfg_hiddenGroupsChanged: generalPage.syncCheckboxes()
 
     function parseHex(s) {
         const m = /^#?([0-9a-fA-F]{6})$/.exec((s || "").trim());
@@ -67,15 +128,40 @@ KCM.SimpleKCM {
             font: Kirigami.Theme.smallFont
         }
 
-        QtControls.TextField {
-            id: hiddenGroupsField
+        QtLayouts.ColumnLayout {
+            id: hiddenGroupsBox
             Kirigami.FormData.label: i18n("Hidden groups:")
-            placeholderText: i18n("Comma-separated list (e.g. 'private, secret')")
-            QtLayouts.Layout.fillWidth: true
+            spacing: 0
+
+            Component.onCompleted: generalPage.syncCheckboxes()
+
+            Repeater {
+                model: generalPage.groupEntries
+                delegate: QtControls.CheckBox {
+                    required property var modelData
+                    required property int index
+                    text: modelData.stale
+                          ? i18n("%1 (not on the board anymore)", modelData.name)
+                          : modelData.name
+                    checked: modelData.checked
+                    onToggled: {
+                        generalPage.groupEntries[index].checked = checked;
+                        generalPage.commitHidden();
+                    }
+                }
+            }
+
+            QtControls.Label {
+                visible: groupSource.groups.length === 0 && groupSource.failed
+                text: i18n("Could not load groups — is the exporter installed?")
+                wrapMode: Text.Wrap
+                opacity: 0.7
+                font: Kirigami.Theme.smallFont
+            }
         }
         QtControls.Label {
             Kirigami.FormData.label: ""
-            text: i18n("Tasks in these groups won't be displayed on the widget eye (tracking still works).")
+            text: i18n("Tick groups to hide their tasks from the widget eye (tracking still works). Untick to bring them back.")
             wrapMode: Text.Wrap
             opacity: 0.7
             font: Kirigami.Theme.smallFont
